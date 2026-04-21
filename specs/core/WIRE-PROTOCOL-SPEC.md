@@ -72,33 +72,33 @@ Short keys (`h`, `p`) minimize overhead per frame.
 
 The header is a MessagePack map with the following fields:
 
-| Key | Type | Required | Description |
-|-----|------|----------|-------------|
-| `v` | integer | yes | Protocol version. Currently `1`. |
-| `t` | integer | yes | Message type (see 5.3). |
-| `id` | string | yes | Unique message ID (UUID v4 recommended). |
-| `from` | string | yes | Sender agent ID. |
-| `to` | string | yes | Recipient agent ID. Empty string for broadcasts. `__system__` for feedback signals. |
-| `domain` | string | yes | Domain context. |
-| `cor` | string | no | Correlation ID for request/response patterns. |
-| `wi` | string | no | Work item ID for cost attribution. |
-| `ts` | integer | yes | Timestamp (ms since Unix epoch). |
-| `ttl` | integer | no | Time-to-live in milliseconds. 0 or absent = no expiry. |
-| `pri` | integer | no | Priority: 0 (low), 1 (normal, default), 2 (high). |
+| Key      | Type    | Required | Description                                                                         |
+| -------- | ------- | -------- | ----------------------------------------------------------------------------------- |
+| `v`      | integer | yes      | Protocol version. Currently `1`.                                                    |
+| `t`      | integer | yes      | Message type (see 5.3).                                                             |
+| `id`     | string  | yes      | Unique message ID (UUID v4 recommended).                                            |
+| `from`   | string  | yes      | Sender agent ID.                                                                    |
+| `to`     | string  | yes      | Recipient agent ID. Empty string for broadcasts. `__system__` for feedback signals. |
+| `domain` | string  | yes      | Domain context.                                                                     |
+| `cor`    | string  | no       | Correlation ID for request/response patterns.                                       |
+| `wi`     | string  | no       | Work item ID for cost attribution.                                                  |
+| `ts`     | integer | yes      | Timestamp (ms since Unix epoch).                                                    |
+| `ttl`    | integer | no       | Time-to-live in milliseconds. 0 or absent = no expiry.                              |
+| `pri`    | integer | no       | Priority: 0 (low), 1 (normal, default), 2 (high).                                   |
 
 ### 5.3 Message types
 
-| Value | Name | Description |
-|-------|------|-------------|
-| `0x01` | SEND | Direct agent-to-agent message |
-| `0x02` | BROADCAST | Broadcast to agents matching a selector |
-| `0x03` | REPLY | Response correlated to a previous message |
-| `0x10` | FEEDBACK | Feedback signal (heartbeat, error, metric, etc.) |
-| `0x20` | WORK_ITEM | Work item creation or update |
-| `0x30` | LIFECYCLE | Lifecycle event (spawn, suspend, resume, terminate) |
-| `0x40` | PRIORITY_QUERY | Agent query to a domain-local priority engine |
-| `0x41` | PRIORITY_RESPONSE | Response from a priority engine |
-| `0xFF` | SYSTEM | Control messages (ping, pong, auth) |
+| Value  | Name              | Description                                         |
+| ------ | ----------------- | --------------------------------------------------- |
+| `0x01` | SEND              | Direct agent-to-agent message                       |
+| `0x02` | BROADCAST         | Broadcast to agents matching a selector             |
+| `0x03` | REPLY             | Response correlated to a previous message           |
+| `0x10` | FEEDBACK          | Feedback signal (heartbeat, error, metric, etc.)    |
+| `0x20` | WORK_ITEM         | Work item creation or update                        |
+| `0x30` | LIFECYCLE         | Lifecycle event (spawn, suspend, resume, terminate) |
+| `0x40` | PRIORITY_QUERY    | Agent query to a domain-local priority engine       |
+| `0x41` | PRIORITY_RESPONSE | Response from a priority engine                     |
+| `0xFF` | SYSTEM            | Control messages (ping, pong, auth)                 |
 
 Message types `0x04`-`0x0F`, `0x11`-`0x1F`, `0x21`-`0x2F`, `0x31`-`0x3F`, `0x42`-`0x4F`, and `0x50`-`0xFE` are reserved for future use.
 
@@ -158,4 +158,4 @@ The Agent Card format follows the A2A Agent Card specification with Meridian ext
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

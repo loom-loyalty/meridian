@@ -99,7 +99,7 @@ export class MeridianTransport {
     this.reconnectAttempts++;
     const baseDelay = Math.min(
       1000 * Math.pow(2, this.reconnectAttempts - 1),
-      this.opts.maxReconnectDelay
+      this.opts.maxReconnectDelay,
     );
     // Add jitter to prevent thundering herd
     const jitter = Math.random() * baseDelay * 0.3;

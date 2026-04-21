@@ -33,7 +33,7 @@ Every domain must have:
 
 **At least one human steward.** A steward owns three things: the domain's budget, the domain's quality gates, and the domain's strategic direction. Stewards are humans, never agents. A domain may have multiple stewards designated as `primary` or `secondary`.
 
-**A visible budget.** Real-time cost attribution from all participating components. The budget has a monthly limit in USD, current spend, and an alert threshold (fraction of limit that triggers a warning).
+**A visible budget.** Real-time cost attribution from all participating components. The budget has a monthly limit in USD, current spend, and an alert threshold (fraction of limit that triggers a warning). Implementations are responsible for keeping `DomainBudget.currentSpendUsd` fresh; staleness should be observable (for example, via a `budgetReadAt` timestamp in the domain's observability logs) so downstream consumers like the priority engine can annotate their outputs when the reading is older than they can act on with confidence.
 
 ---
 
@@ -82,4 +82,4 @@ Implementations may formalize maturity levels and track progression as a metric.
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

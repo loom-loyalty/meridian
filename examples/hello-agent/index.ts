@@ -33,10 +33,7 @@ function emitHeartbeat(transport: MeridianTransport): void {
     timestamp: Date.now(),
   };
 
-  const frame = feedbackFrame(
-    { from: AGENT_ID, domain: DOMAIN },
-    heartbeat
-  );
+  const frame = feedbackFrame({ from: AGENT_ID, domain: DOMAIN }, heartbeat);
 
   transport.send(frame);
 }

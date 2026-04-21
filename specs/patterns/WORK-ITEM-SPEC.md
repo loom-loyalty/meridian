@@ -73,17 +73,17 @@ Where `timeCriticality` increases as items age in the queue (cost of delay accum
 interface CostEstimate {
   amountUsd: number;
   breakdown?: {
-    tokens?: number;         // estimated token cost
-    compute?: number;        // estimated compute cost
-    humanHours?: number;     // estimated human time cost
-    revenueImpact?: number;  // revenue at risk (costOfNotBuilding)
-    riskExposure?: number;   // probability × impact (costOfNotBuilding)
+    tokens?: number; // estimated token cost
+    compute?: number; // estimated compute cost
+    humanHours?: number; // estimated human time cost
+    revenueImpact?: number; // revenue at risk (costOfNotBuilding)
+    riskExposure?: number; // probability × impact (costOfNotBuilding)
     debtAccumulation?: number; // ongoing cost if deferred (costOfNotBuilding)
   };
-  basis?: string;              // human-readable explanation of methodology
-  providedBy?: DomainId;       // domain accountable for this estimate
-  estimatorAgentId?: AgentId;  // specific agent that produced the estimate
-  estimatedAt?: Timestamp;     // when the estimate was produced
+  basis?: string; // human-readable explanation of methodology
+  providedBy?: DomainId; // domain accountable for this estimate
+  estimatorAgentId?: AgentId; // specific agent that produced the estimate
+  estimatedAt?: Timestamp; // when the estimate was produced
 }
 ```
 
@@ -132,4 +132,4 @@ The `in_review` status triggers graduated enforcement: mechanical checks first, 
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

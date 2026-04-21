@@ -91,8 +91,8 @@ type Timestamp = number;
  * Future versions may support other currencies and credit systems.
  */
 type Cost = {
-  amount: number;        // floating point, USD
-  currency: "USD";       // locked to USD in v1.0
+  amount: number; // floating point, USD
+  currency: "USD"; // locked to USD in v1.0
   attributedTo?: WorkItemId;
 };
 
@@ -101,12 +101,12 @@ type Cost = {
  * The runtime enforces these limits and terminates agents that exceed them.
  */
 type ResourceLimits = {
-  maxMemoryMB?: number;        // hard memory ceiling
-  maxCpuMs?: number;           // total CPU time per invocation
-  maxTokensPerCall?: number;   // tokens per single LLM call
-  maxTokensTotal?: number;     // tokens across the agent's lifetime
-  maxCostUsd?: number;         // hard cost ceiling, USD
-  maxConcurrency?: number;     // simultaneous in-flight operations
+  maxMemoryMB?: number; // hard memory ceiling
+  maxCpuMs?: number; // total CPU time per invocation
+  maxTokensPerCall?: number; // tokens per single LLM call
+  maxTokensTotal?: number; // tokens across the agent's lifetime
+  maxCostUsd?: number; // hard cost ceiling, USD
+  maxConcurrency?: number; // simultaneous in-flight operations
 };
 
 /**
@@ -160,7 +160,7 @@ type PermissionScope = {
  */
 type InvocationContext = {
   source: "interactive" | "webhook" | "scheduled" | "agent" | "system";
-  sourceId?: string;            // e.g., Slack thread ID, webhook event ID
+  sourceId?: string; // e.g., Slack thread ID, webhook event ID
   permissions?: PermissionScope; // overrides agent's default scope for this invocation
   auditLevel?: "full" | "summary" | "none";
 };
@@ -177,10 +177,10 @@ type InvocationContext = {
  * @experimental
  */
 type RuntimeRequirements = {
-  class: "isolate" | "sandbox" | "any";  // isolate = lightweight (CF Workers), sandbox = full VM
-  filesystem?: boolean;          // needs filesystem access
-  shell?: boolean;               // needs shell/exec access
-  networkControl?: boolean;      // needs egress filtering or credential brokering
+  class: "isolate" | "sandbox" | "any"; // isolate = lightweight (CF Workers), sandbox = full VM
+  filesystem?: boolean; // needs filesystem access
+  shell?: boolean; // needs shell/exec access
+  networkControl?: boolean; // needs egress filtering or credential brokering
   minMemoryMB?: number;
   snapshotSupport?: boolean;
 };
@@ -205,8 +205,15 @@ type QualitySignal = {
   score?: number;
 
   /** What category of quality was measured. */
-  category: "architectural" | "behavioral" | "performance" | "security"
-    | "documentation" | "testing" | "entropy" | "custom";
+  category:
+    | "architectural"
+    | "behavioral"
+    | "performance"
+    | "security"
+    | "documentation"
+    | "testing"
+    | "entropy"
+    | "custom";
 
   /**
    * Individual check results. Each check is a named validation
@@ -222,13 +229,13 @@ type QualitySignal = {
 };
 
 type QualityCheck = {
-  name: string;               // e.g., "no-circular-deps", "layer-boundary"
+  name: string; // e.g., "no-circular-deps", "layer-boundary"
   result: "pass" | "fail" | "warn" | "skip";
-  message?: string;           // human-readable explanation
-  file?: string;              // file path, if applicable
-  line?: number;              // line number, if applicable
-  fix?: string;               // suggested fix description
-  autoFixable: boolean;       // can an agent fix this without human judgment?
+  message?: string; // human-readable explanation
+  file?: string; // file path, if applicable
+  line?: number; // line number, if applicable
+  fix?: string; // suggested fix description
+  autoFixable: boolean; // can an agent fix this without human judgment?
 };
 
 /**
@@ -267,8 +274,15 @@ type CompetingContext = {
   contestedWorkItemId: WorkItemId;
 
   /** The type of concern being raised. */
-  concern: "dependency_risk" | "sla_risk" | "cost_risk" | "data_risk"
-    | "performance_risk" | "security_risk" | "architectural_risk" | "custom";
+  concern:
+    | "dependency_risk"
+    | "sla_risk"
+    | "cost_risk"
+    | "data_risk"
+    | "performance_risk"
+    | "security_risk"
+    | "architectural_risk"
+    | "custom";
 
   /** Machine-readable impact assessment. */
   impact: {
@@ -289,7 +303,7 @@ type CompetingContext = {
   suggestedAlternative?: string;
 
   /** Confidence in this competing context assessment. */
-  confidence: number;  // 0.0 to 1.0
+  confidence: number; // 0.0 to 1.0
 };
 
 /**
@@ -410,11 +424,11 @@ type SpawnConfig = {
   id: AgentId;
   domain: DomainId;
   initialState?: Record<string, unknown>;
-  fromSnapshot?: SnapshotId;     // @experimental: spawn from a previous snapshot (overrides initialState)
+  fromSnapshot?: SnapshotId; // @experimental: spawn from a previous snapshot (overrides initialState)
   limits?: ResourceLimits;
   permissions?: PermissionScope; // @experimental: access control scope for this agent
   metadata?: Record<string, string>;
-  idempotent?: boolean;          // default false
+  idempotent?: boolean; // default false
 };
 
 type AgentHandle = {
@@ -431,8 +445,8 @@ type AgentHandle = {
 - After `terminate` returns, the agent's state is unrecoverable.
 - Lifecycle transitions are atomic. An agent is either fully spawned or not spawned at all; partial states are not observable.
 - The runtime must prevent race conditions between concurrent lifecycle operations on the same agent.
-- *(experimental)* When `fromSnapshot` is provided in `SpawnConfig`, `initialState` is ignored. The agent boots with the full state from the snapshot. Runtimes that do not support snapshots must throw `UNAVAILABLE` if `fromSnapshot` is set.
-- *(experimental)* When `permissions` is provided in `SpawnConfig`, the runtime must enforce the `PermissionScope` for the lifetime of the agent. Permission changes after spawn require `setPermissions()` (see section 4.5).
+- _(experimental)_ When `fromSnapshot` is provided in `SpawnConfig`, `initialState` is ignored. The agent boots with the full state from the snapshot. Runtimes that do not support snapshots must throw `UNAVAILABLE` if `fromSnapshot` is set.
+- _(experimental)_ When `permissions` is provided in `SpawnConfig`, the runtime must enforce the `PermissionScope` for the lifetime of the agent. Permission changes after spawn require `setPermissions()` (see section 4.5).
 
 ---
 
@@ -494,19 +508,19 @@ interface StatePersistence {
   update<T>(
     agentId: AgentId,
     key: string,
-    updater: (current: T | undefined) => T
+    updater: (current: T | undefined) => T,
   ): Promise<T>;
 }
 
 type ListOptions = {
   prefix?: string;
-  limit?: number;       // default 1000, max 10000
-  cursor?: string;      // opaque pagination cursor
+  limit?: number; // default 1000, max 10000
+  cursor?: string; // opaque pagination cursor
 };
 
 type ListResult = {
   keys: string[];
-  cursor?: string;      // present if more results exist
+  cursor?: string; // present if more results exist
 };
 ```
 
@@ -542,7 +556,7 @@ interface Scheduling {
   scheduleAt(
     agentId: AgentId,
     when: Timestamp,
-    payload?: unknown
+    payload?: unknown,
   ): Promise<ScheduleId>;
 
   /**
@@ -556,7 +570,7 @@ interface Scheduling {
   scheduleCron(
     agentId: AgentId,
     cron: string,
-    payload?: unknown
+    payload?: unknown,
   ): Promise<ScheduleId>;
 
   /**
@@ -578,7 +592,7 @@ type ScheduleInfo = {
   agentId: AgentId;
   type: "once" | "cron";
   nextFireAt: Timestamp;
-  cron?: string;          // present if type is "cron"
+  cron?: string; // present if type is "cron"
   payload?: unknown;
 };
 ```
@@ -614,7 +628,7 @@ interface MessageTransport {
     fromAgentId: AgentId,
     toAgentId: AgentId,
     payload: Uint8Array,
-    options?: SendOptions
+    options?: SendOptions,
   ): Promise<MessageReceipt>;
 
   /**
@@ -631,7 +645,7 @@ interface MessageTransport {
     fromAgentId: AgentId,
     selector: AgentSelector,
     payload: Uint8Array,
-    options?: SendOptions
+    options?: SendOptions,
   ): Promise<BroadcastReceipt>;
 
   /**
@@ -644,17 +658,14 @@ interface MessageTransport {
    * The handler must return within the agent's configured timeout, or
    * the runtime considers delivery failed and may retry per its policy.
    */
-  onMessage(
-    agentId: AgentId,
-    handler: MessageHandler
-  ): Promise<void>;
+  onMessage(agentId: AgentId, handler: MessageHandler): Promise<void>;
 }
 
 type SendOptions = {
-  ttlMs?: number;             // message expires if not delivered within this window
+  ttlMs?: number; // message expires if not delivered within this window
   priority?: "low" | "normal" | "high";
-  correlationId?: string;     // for request/response patterns
-  workItemId?: WorkItemId;    // for cost attribution
+  correlationId?: string; // for request/response patterns
+  workItemId?: WorkItemId; // for cost attribution
 };
 
 type AgentSelector = {
@@ -724,10 +735,7 @@ interface ResourceManagement {
    * The runtime invokes the callback when an agent crosses a configured
    * threshold (warning), or when it exceeds a hard limit (exceeded).
    */
-  onLimitEvent(
-    agentId: AgentId,
-    handler: LimitEventHandler
-  ): Promise<void>;
+  onLimitEvent(agentId: AgentId, handler: LimitEventHandler): Promise<void>;
 
   /**
    * Update the permission scope for an existing agent.
@@ -744,7 +752,7 @@ interface ResourceManagement {
   setPermissions(
     agentId: AgentId,
     permissions: PermissionScope,
-    context?: InvocationContext
+    context?: InvocationContext,
   ): Promise<void>;
 
   /**
@@ -772,7 +780,7 @@ type ResourceUsage = {
 
 type ResourceWarning = {
   type: "memory" | "cpu" | "tokens" | "cost" | "concurrency";
-  threshold: number;     // 0.0 to 1.0, fraction of limit
+  threshold: number; // 0.0 to 1.0, fraction of limit
   triggeredAt: Timestamp;
 };
 
@@ -794,8 +802,8 @@ type LimitEventHandler = (event: LimitEvent) => Promise<void>;
 - Cost attribution: when an operation is tagged with a `workItemId`, the runtime must attribute the cost to that work item in addition to the agent's lifetime total.
 - Warning thresholds (e.g., 80% of limit) emit `LimitEvent` with type `warning` but do not terminate the agent. This gives agents and operators a chance to react before hitting the hard ceiling.
 - Limit checks must be observable via `getUsage()` in real-time, not on a delayed schedule. The latency between resource consumption and `getUsage()` reflecting it must be under 1 second.
-- *(experimental)* Permission scopes are enforced structurally by the runtime's credential layer, not by model behavior. An agent with a `PermissionScope` restricting it to `["crm.search*"]` must not be able to invoke `crm.delete` regardless of what code it generates. The runtime must return `PERMISSION_DENIED` for out-of-scope operations.
-- *(experimental)* Invocation-scoped permissions are computed as the intersection of the agent's base permissions and the invocation's `PermissionScope`. The effective scope is always equal to or narrower than the agent's base scope; invocation context cannot escalate permissions beyond the base.
+- _(experimental)_ Permission scopes are enforced structurally by the runtime's credential layer, not by model behavior. An agent with a `PermissionScope` restricting it to `["crm.search*"]` must not be able to invoke `crm.delete` regardless of what code it generates. The runtime must return `PERMISSION_DENIED` for out-of-scope operations.
+- _(experimental)_ Invocation-scoped permissions are computed as the intersection of the agent's base permissions and the invocation's `PermissionScope`. The effective scope is always equal to or narrower than the agent's base scope; invocation context cannot escalate permissions beyond the base.
 
 ---
 
@@ -891,10 +899,10 @@ Test categories:
 - **Resource enforcement** — termination on hard limit, warning emission
 - **Observability completeness** — automatic dimensions, non-blocking emission
 - **Error categorization** — all errors map to documented categories
-- *(experimental)* **Permission enforcement** — PermissionScope restricts service access, invocation context narrows scope
-- *(experimental)* **Snapshot lifecycle** — snapshotState captures state, fromSnapshot restores it, UNAVAILABLE on unsupported runtimes
-- *(experimental)* **Quality signal validation** — QualitySignal structure is well-formed, enforcement tiers are correctly classified, check results contain required fields
-- *(experimental)* **Competing context format** — CompetingContext carries machine-readable impact assessment, confidence score, and structured concern type
+- _(experimental)_ **Permission enforcement** — PermissionScope restricts service access, invocation context narrows scope
+- _(experimental)_ **Snapshot lifecycle** — snapshotState captures state, fromSnapshot restores it, UNAVAILABLE on unsupported runtimes
+- _(experimental)_ **Quality signal validation** — QualitySignal structure is well-formed, enforcement tiers are correctly classified, check results contain required fields
+- _(experimental)_ **Competing context format** — CompetingContext carries machine-readable impact assessment, confidence score, and structured concern type
 
 Implementations may publish their conformance test results. The Meridian project maintains a public registry of conformant implementations.
 
@@ -992,4 +1000,4 @@ Feedback on these questions is welcome via the Meridian RFC process.
 
 ---
 
-*This document is a draft. Comments, corrections, and proposed changes are welcome via pull request to the meridian-spec repository.*
+_This document is a draft. Comments, corrections, and proposed changes are welcome via pull request to the meridian-spec repository._

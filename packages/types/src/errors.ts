@@ -28,7 +28,11 @@ export class RuntimeError extends Error {
   constructor(
     category: ErrorCategory,
     message: string,
-    opts?: { retryable?: boolean; cause?: Error; context?: Record<string, unknown> }
+    opts?: {
+      retryable?: boolean;
+      cause?: Error;
+      context?: Record<string, unknown>;
+    },
   ) {
     super(message);
     this.name = "RuntimeError";

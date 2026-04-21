@@ -13,10 +13,18 @@
  * in §4 consumes the latter (CompetingContext: isolated|module|service|domain|system).
  */
 
-import type { CircuitBreakerConfig, ErrorFeedback } from "@loom-loyalty/meridian-types";
+import type {
+  CircuitBreakerConfig,
+  ErrorFeedback,
+} from "@loom-loyalty/meridian-types";
 
 /** Ordered severity levels. Higher index = more severe. */
-const SEVERITY_ORDER: ErrorFeedback["severity"][] = ["low", "medium", "high", "critical"];
+const SEVERITY_ORDER: ErrorFeedback["severity"][] = [
+  "low",
+  "medium",
+  "high",
+  "critical",
+];
 
 /**
  * Default breaker config when a domain does not supply one.
@@ -34,7 +42,7 @@ export const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
  */
 export function shouldTripCircuitBreaker(
   error: ErrorFeedback,
-  config: CircuitBreakerConfig = DEFAULT_CIRCUIT_BREAKER_CONFIG
+  config: CircuitBreakerConfig = DEFAULT_CIRCUIT_BREAKER_CONFIG,
 ): boolean {
   if (!severityAtLeast(error.severity, config.criticalSeverityThreshold)) {
     return false;
@@ -50,7 +58,7 @@ export function shouldTripCircuitBreaker(
 
 function severityAtLeast(
   actual: ErrorFeedback["severity"],
-  threshold: CircuitBreakerConfig["criticalSeverityThreshold"]
+  threshold: CircuitBreakerConfig["criticalSeverityThreshold"],
 ): boolean {
   return SEVERITY_ORDER.indexOf(actual) >= SEVERITY_ORDER.indexOf(threshold);
 }

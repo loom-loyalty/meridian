@@ -48,11 +48,9 @@ const FREQUENCY_WEIGHT: Record<ErrorFeedback["frequency"], number> = {
 };
 
 /** Escalating blast radii (CompetingContext values). */
-const ESCALATING_BLAST_RADII = new Set<CompetingContext["impact"]["blastRadius"]>([
-  "service",
-  "domain",
-  "system",
-]);
+const ESCALATING_BLAST_RADII = new Set<
+  CompetingContext["impact"]["blastRadius"]
+>(["service", "domain", "system"]);
 
 /**
  * State the engine queries via its injected providers. These are small
@@ -69,7 +67,9 @@ export interface EngineProviders {
   /** Return the Domain object (for per-domain config + budget annotations). */
   getDomain(domainId: string): Promise<Domain | undefined>;
   /** Return a recently closed work item superseded by the given lineage id, if any. */
-  getSupersededItem(lineageId: WorkItemId | undefined): Promise<WorkItem | undefined>;
+  getSupersededItem(
+    lineageId: WorkItemId | undefined,
+  ): Promise<WorkItem | undefined>;
 }
 
 export interface EngineOptions {
@@ -104,8 +104,12 @@ export class WSJFPriorityEngine {
     const allOpen = await this.providers.listOpenWorkItems(q.domain);
     const eligible = allOpen.filter((wi) => wi.status !== "proposed");
 
-    const weights = resolveWeightProfile(domain.priorityConfig?.weightProfileId);
-    const breakerConfig = domain.priorityConfig?.circuitBreakerConfig ?? DEFAULT_CIRCUIT_BREAKER_CONFIG;
+    const weights = resolveWeightProfile(
+      domain.priorityConfig?.weightProfileId,
+    );
+    const breakerConfig =
+      domain.priorityConfig?.circuitBreakerConfig ??
+      DEFAULT_CIRCUIT_BREAKER_CONFIG;
 
     const scored: PrioritizedWorkItem[] = [];
     const pendingReviewReasons: CompetingContext[] = [];
@@ -131,7 +135,7 @@ export class WSJFPriorityEngine {
 
       // Escalation: CompetingContext above module blast radius
       const escalatingContexts = contexts.filter((c) =>
-        ESCALATING_BLAST_RADII.has(c.impact.blastRadius)
+        ESCALATING_BLAST_RADII.has(c.impact.blastRadius),
       );
       if (escalatingContexts.length > 0) {
         pendingReviewReasons.push(...escalatingContexts);
@@ -149,8 +153,18 @@ export class WSJFPriorityEngine {
 
       // Normal scoring path
       const superseded = await this.providers.getSupersededItem(wi.lineage);
-      const regressionDaysSinceClosed = regressionDays(wi, superseded, this.now);
-      const score = this.scoreWorkItem(wi, contexts, err, weights, regressionDaysSinceClosed);
+      const regressionDaysSinceClosed = regressionDays(
+        wi,
+        superseded,
+        this.now,
+      );
+      const score = this.scoreWorkItem(
+        wi,
+        contexts,
+        err,
+        weights,
+        regressionDaysSinceClosed,
+      );
 
       const expl = includeExplanation
         ? explain({
@@ -166,7 +180,8 @@ export class WSJFPriorityEngine {
       scored.push({
         workItem: wi,
         priorityScore: score,
-        priorityAnnotation: regressionDaysSinceClosed !== undefined ? "regression" : undefined,
+        priorityAnnotation:
+          regressionDaysSinceClosed !== undefined ? "regression" : undefined,
         explanation: expl,
       });
 
@@ -181,13 +196,15 @@ export class WSJFPriorityEngine {
       }
       if (a.priorityScore === null) return 1;
       if (b.priorityScore === null) return -1;
-      if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
+      if (a.priorityScore !== b.priorityScore)
+        return b.priorityScore - a.priorityScore;
       return tieBreak(a.workItem, b.workItem);
     });
 
     return {
       items: scored.slice(0, limit),
-      pendingReviewReasons: pendingReviewReasons.length > 0 ? pendingReviewReasons : undefined,
+      pendingReviewReasons:
+        pendingReviewReasons.length > 0 ? pendingReviewReasons : undefined,
       domainBudgetStatus: this.budgetStatus(domain),
       queriedAt: this.now(),
     };
@@ -195,12 +212,15 @@ export class WSJFPriorityEngine {
 
   private validateQuery(q: AgentPriorityQuery): void {
     if (!q.agentId || !q.domain) {
-      throw new RuntimeError("invalid_argument", "agentId and domain are required");
+      throw new RuntimeError(
+        "invalid_argument",
+        "agentId and domain are required",
+      );
     }
     if (q.limit !== undefined && (q.limit < 1 || q.limit > MAX_LIMIT)) {
       throw new RuntimeError(
         "invalid_argument",
-        `limit must be between 1 and ${MAX_LIMIT}`
+        `limit must be between 1 and ${MAX_LIMIT}`,
       );
     }
   }
@@ -209,13 +229,13 @@ export class WSJFPriorityEngine {
     if (wi.costOfNotBuilding.amountUsd < 0) {
       throw new RuntimeError(
         "invalid_argument",
-        `costOfNotBuilding.amountUsd must be >= 0 (work item ${wi.id})`
+        `costOfNotBuilding.amountUsd must be >= 0 (work item ${wi.id})`,
       );
     }
     if (wi.confidence < 0 || wi.confidence > 1) {
       throw new RuntimeError(
         "invalid_argument",
-        `confidence must be in [0.0, 1.0] (work item ${wi.id})`
+        `confidence must be in [0.0, 1.0] (work item ${wi.id})`,
       );
     }
   }
@@ -225,13 +245,18 @@ export class WSJFPriorityEngine {
     contexts: CompetingContext[],
     err: ErrorFeedback | undefined,
     weights: Required<Omit<WeightProfile, "id">> & { id: string },
-    regressionDaysSinceClosed: number | undefined
+    regressionDaysSinceClosed: number | undefined,
   ): number {
-    const costOfNotBuildingUsd = wi.costOfNotBuilding.amountUsd * weights.costOfNotBuildingWeight;
+    const costOfNotBuildingUsd =
+      wi.costOfNotBuilding.amountUsd * weights.costOfNotBuildingWeight;
     const riskReductionUsd = wi.costOfNotBuilding.breakdown?.riskExposure ?? 0;
     const timeCriticalityUsd = this.timeCriticality(wi, err, weights);
 
-    const impactUnitless = this.impactTerm(wi.costOfNotBuilding, contexts, weights);
+    const impactUnitless = this.impactTerm(
+      wi.costOfNotBuilding,
+      contexts,
+      weights,
+    );
 
     const confidence = wi.confidence * weights.confidenceMultiplier;
 
@@ -247,7 +272,7 @@ export class WSJFPriorityEngine {
       regressionDaysSinceClosed !== undefined
         ? Math.min(
             weights.regressionMultiplierCap,
-            1 + 1 / Math.max(regressionDaysSinceClosed, 1)
+            1 + 1 / Math.max(regressionDaysSinceClosed, 1),
           )
         : 1.0;
 
@@ -257,7 +282,7 @@ export class WSJFPriorityEngine {
   private timeCriticality(
     wi: WorkItem,
     err: ErrorFeedback | undefined,
-    weights: Required<Omit<WeightProfile, "id">> & { id: string }
+    weights: Required<Omit<WeightProfile, "id">> & { id: string },
   ): number {
     if (!err) return 0;
     const ageDays = (this.now() - wi.createdAt) / MS_PER_DAY;
@@ -274,17 +299,18 @@ export class WSJFPriorityEngine {
   private impactTerm(
     costOfNotBuilding: CostEstimate,
     contexts: CompetingContext[],
-    weights: Required<Omit<WeightProfile, "id">> & { id: string }
+    weights: Required<Omit<WeightProfile, "id">> & { id: string },
   ): number {
     const revenueFromContexts = contexts.reduce(
       (sum, c) => sum + (c.impact.revenueAtRiskUsd ?? 0),
-      0
+      0,
     );
     const consumersFromContexts = contexts.reduce(
       (sum, c) => sum + (c.impact.affectedConsumers ?? 0),
-      0
+      0,
     );
-    const consumerRevenue = consumersFromContexts * weights.usdPerAffectedConsumer;
+    const consumerRevenue =
+      consumersFromContexts * weights.usdPerAffectedConsumer;
     const impactUsd = revenueFromContexts + consumerRevenue;
     const denominator = Math.max(costOfNotBuilding.amountUsd, 0.01);
     return impactUsd / denominator;
@@ -308,7 +334,7 @@ function tieBreak(a: WorkItem, b: WorkItem): number {
 function regressionDays(
   _wi: WorkItem,
   superseded: WorkItem | undefined,
-  now: () => number
+  now: () => number,
 ): number | undefined {
   if (!superseded || superseded.status !== "done") return undefined;
   const closedAt = superseded.updatedAt;

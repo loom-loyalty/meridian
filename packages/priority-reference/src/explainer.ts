@@ -61,7 +61,7 @@ function dominantFactorSummary(ctx: ExplainContext): string {
 
   if (typeof ctx.regressionDaysSinceClosed === "number") {
     parts.push(
-      `regression — first fix lasted ${ctx.regressionDaysSinceClosed}d`
+      `regression — first fix lasted ${ctx.regressionDaysSinceClosed}d`,
     );
   }
 
@@ -76,26 +76,29 @@ function dominantFactorSummary(ctx: ExplainContext): string {
 
 function dominantRevenueAmount(
   workItem: WorkItem,
-  contexts: CompetingContext[] | undefined
+  contexts: CompetingContext[] | undefined,
 ): number {
   const fromWorkItem = workItem.costOfNotBuilding.breakdown?.revenueImpact ?? 0;
   const fromContext = contexts?.reduce(
     (sum, c) => sum + (c.impact.revenueAtRiskUsd ?? 0),
-    0
+    0,
   );
   return Math.max(fromWorkItem, fromContext ?? 0);
 }
 
 function dominantAffectedConsumers(
-  contexts: CompetingContext[] | undefined
+  contexts: CompetingContext[] | undefined,
 ): number {
   if (!contexts) return 0;
-  return contexts.reduce((sum, c) => sum + (c.impact.affectedConsumers ?? 0), 0);
+  return contexts.reduce(
+    (sum, c) => sum + (c.impact.affectedConsumers ?? 0),
+    0,
+  );
 }
 
 /** Take the strongest blast-radius label present. Order: system > domain > service > module > isolated. */
 function dominantBlastRadius(
-  contexts: CompetingContext[] | undefined
+  contexts: CompetingContext[] | undefined,
 ): string | null {
   if (!contexts || contexts.length === 0) return null;
   const order: CompetingContext["impact"]["blastRadius"][] = [
@@ -114,7 +117,7 @@ function dominantBlastRadius(
 function budgetAnnotation(
   domain: Domain | undefined,
   readAt: Timestamp | undefined,
-  now: Timestamp
+  now: Timestamp,
 ): string | null {
   if (!domain?.budget) return null;
 

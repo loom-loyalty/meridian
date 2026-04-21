@@ -65,7 +65,11 @@ export interface StatePersistence {
   load<T = unknown>(agentId: AgentId, key: string): Promise<T | undefined>;
   delete(agentId: AgentId, key: string): Promise<void>;
   list(agentId: AgentId, opts?: ListOptions): Promise<ListResult>;
-  update<T>(agentId: AgentId, key: string, updater: (current: T | undefined) => T): Promise<T>;
+  update<T>(
+    agentId: AgentId,
+    key: string,
+    updater: (current: T | undefined) => T,
+  ): Promise<T>;
 }
 
 // ── Scheduling ───────────────────────────────────────────
@@ -80,8 +84,16 @@ export interface ScheduleInfo {
 }
 
 export interface Scheduling {
-  scheduleAt(agentId: AgentId, when: Timestamp, payload?: unknown): Promise<ScheduleId>;
-  scheduleCron(agentId: AgentId, cron: string, payload?: unknown): Promise<ScheduleId>;
+  scheduleAt(
+    agentId: AgentId,
+    when: Timestamp,
+    payload?: unknown,
+  ): Promise<ScheduleId>;
+  scheduleCron(
+    agentId: AgentId,
+    cron: string,
+    payload?: unknown,
+  ): Promise<ScheduleId>;
   cancel(scheduleId: ScheduleId): Promise<void>;
   listSchedules(agentId: AgentId): Promise<ScheduleInfo[]>;
 }
@@ -119,8 +131,18 @@ export interface IncomingMessage {
 export type MessageHandler = (msg: IncomingMessage) => Promise<void>;
 
 export interface MessageTransport {
-  send(fromAgentId: AgentId, toAgentId: AgentId, payload: Uint8Array, options?: SendOptions): Promise<MessageReceipt>;
-  broadcast(fromAgentId: AgentId, selector: AgentSelector, payload: Uint8Array, options?: SendOptions): Promise<BroadcastReceipt>;
+  send(
+    fromAgentId: AgentId,
+    toAgentId: AgentId,
+    payload: Uint8Array,
+    options?: SendOptions,
+  ): Promise<MessageReceipt>;
+  broadcast(
+    fromAgentId: AgentId,
+    selector: AgentSelector,
+    payload: Uint8Array,
+    options?: SendOptions,
+  ): Promise<BroadcastReceipt>;
   onMessage(agentId: AgentId, handler: MessageHandler): Promise<void>;
 }
 
@@ -160,7 +182,11 @@ export interface ResourceManagement {
   getUsage(agentId: AgentId): Promise<ResourceUsage>;
   onLimitEvent(agentId: AgentId, handler: LimitEventHandler): Promise<void>;
   /** @experimental */
-  setPermissions(agentId: AgentId, permissions: PermissionScope, context?: InvocationContext): Promise<void>;
+  setPermissions(
+    agentId: AgentId,
+    permissions: PermissionScope,
+    context?: InvocationContext,
+  ): Promise<void>;
   /** @experimental */
   getPermissions(agentId: AgentId): Promise<PermissionScope>;
 }

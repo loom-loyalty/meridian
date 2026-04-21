@@ -27,7 +27,7 @@ const config: SpawnConfig = {
   id: "pg-query-optimizer-prod",
   domain: "infrastructure",
   limits: {
-    maxCostUsd: 50,             // monthly ceiling for this agent instance
+    maxCostUsd: 50, // monthly ceiling for this agent instance
     maxTokensTotal: 100000,
     maxTokensPerCall: 8000,
     maxMemoryMB: 128,
@@ -46,8 +46,12 @@ The `infrastructure` domain has its own budget envelope on the `Domain` object (
 The agent observes for 48 hours before surfacing anything. During observation, it stores query-cost baselines in its isolated state namespace using the `StatePersistence` primitive ([`core/RUNTIME-SPEC.md`](core/RUNTIME-SPEC.md) §4.2):
 
 ```typescript
-await state.save(agentId, "baseline:query_fingerprints", { /* 47 fingerprints */ });
-await state.save(agentId, "baseline:p95_ms", { SELECT_orders_by_user_id: 85, /* ... */ });
+await state.save(agentId, "baseline:query_fingerprints", {
+  /* 47 fingerprints */
+});
+await state.save(agentId, "baseline:p95_ms", {
+  SELECT_orders_by_user_id: 85 /* ... */,
+});
 ```
 
 The agent emits a routine heartbeat the whole time:
@@ -74,7 +78,8 @@ const insight: InsightFeedback = {
   agentId: "pg-query-optimizer-prod",
   domain: "infrastructure",
   confidence: 0.87,
-  summary: "Query `SELECT orders WHERE user_id = ?` is 40% of database CPU, baseline was 6%. Drift started ~6 hours ago. Missing index on orders.user_id.",
+  summary:
+    "Query `SELECT orders WHERE user_id = ?` is 40% of database CPU, baseline was 6%. Drift started ~6 hours ago. Missing index on orders.user_id.",
   timestamp: Date.now(),
 };
 ```
@@ -90,9 +95,10 @@ const proposed: WorkItem = {
   id: "wi_pg_index_orders_user_id_20260421",
   type: "story",
   title: "Add index on orders.user_id",
-  description: "Detected hot query consuming 40% DB CPU. Missing index on orders.user_id.",
+  description:
+    "Detected hot query consuming 40% DB CPU. Missing index on orders.user_id.",
 
-  domains: ["infrastructure", "engineering"],  // cross-domain: infra detects, engineering estimates
+  domains: ["infrastructure", "engineering"], // cross-domain: infra detects, engineering estimates
   source: "agent",
   sourceAgentId: "pg-query-optimizer-prod",
   lineage: undefined,
@@ -106,7 +112,8 @@ const proposed: WorkItem = {
   costOfNotBuilding: {
     amountUsd: 340,
     breakdown: { debtAccumulation: 340 },
-    basis: "Projected monthly query cost if the traffic curve continues. Current run-rate: $260/mo and climbing.",
+    basis:
+      "Projected monthly query cost if the traffic curve continues. Current run-rate: $260/mo and climbing.",
     providedBy: "infrastructure",
     estimatorAgentId: "pg-query-optimizer-prod",
     estimatedAt: Date.now(),
@@ -132,12 +139,13 @@ await workItems.update(proposed.id, {
   costToBuild: {
     amountUsd: 50,
     breakdown: { tokens: 5, compute: 45 },
-    basis: "Similar migrations at Loom: 30-60 min agent time + ~20 min migration window on the replica.",
+    basis:
+      "Similar migrations at Loom: 30-60 min agent time + ~20 min migration window on the replica.",
     providedBy: "engineering",
     estimatorAgentId: "migration-cost-estimator-prod",
     estimatedAt: Date.now(),
   },
-  status: "researching",   // engineering is on it
+  status: "researching", // engineering is on it
 });
 
 // After estimate lands and peer review signs off:
@@ -186,7 +194,8 @@ const insight: InsightFeedback = {
   agentId: "amplitude-funnel-watcher-prod",
   domain: "product",
   confidence: 0.91,
-  summary: "Onboarding step 3 drop rate 30% (baseline 18%). 4800 users affected in 72 hours. Drift coincides with release r-2026-04-18.",
+  summary:
+    "Onboarding step 3 drop rate 30% (baseline 18%). 4800 users affected in 72 hours. Drift coincides with release r-2026-04-18.",
   timestamp: Date.now(),
 };
 ```
@@ -200,7 +209,8 @@ const experiment: WorkItem = {
   id: "wi_onboarding_v2_experiment_20260421",
   type: "story",
   title: "Run onboarding copy v2 A/B experiment",
-  description: "Hypothesis: step 3 drop is caused by unclear copy. Propose A/B test with rewritten copy.",
+  description:
+    "Hypothesis: step 3 drop is caused by unclear copy. Propose A/B test with rewritten copy.",
 
   domains: ["product", "engineering"],
   source: "agent",
@@ -308,4 +318,4 @@ It is a protocol. It specifies shapes. Adopters pick orchestrators and framework
 
 ---
 
-*Draft document. The opening scene and chapter narrative voice need a final pass from Nate; field values are verified against the shipping types in `@loom-loyalty/meridian-types`. Feedback welcome via issues and pull requests.*
+_Draft document. The opening scene and chapter narrative voice need a final pass from Nate; field values are verified against the shipping types in `@loom-loyalty/meridian-types`. Feedback welcome via issues and pull requests._

@@ -91,25 +91,50 @@ cd meridian
 pnpm install
 pnpm build
 pnpm typecheck
+pnpm test
 ```
+
+### Setup notes
+
+The project pins `pnpm@9.15.0` via the `packageManager` field and requires Node 20+. **Use a Node LTS release (20 or 22).** Node 22 is the current active LTS through April 2027; Node 20 is in maintenance through April 2026. CI runs on Node 20.
+
+Non-LTS Node releases (21, 23, 25) are "Current" line and are not officially supported by most tooling in the JS ecosystem. `npm` warns `EBADENGINE` on the latest `corepack`, `pnpm` may hit a bundled-corepack signature-verification bug, and any number of transitive deps will flake in ways you can't fix in this repo.
+
+If you are stuck on non-LTS Node for some other reason and `pnpm install` fails with `Cannot find matching keyid`, this env var works around the corepack signature issue by using the pinned `packageManager` version directly:
+
+```bash
+COREPACK_DEFAULT_TO_LATEST=0 pnpm install
+```
+
+Export it in your shell rc (`.zshrc`, `.bashrc`) to make it permanent. CI runs fine without it.
+
+### Contributing
+
+Package changes need a changeset:
+
+```bash
+pnpm changeset
+```
+
+See [`.changeset/README.md`](.changeset/README.md) for the release workflow. Spec-only changes (files under `specs/`) do not require a changeset.
 
 ## Packages
 
-| Package | Description | Status |
-|---|---|---|
+| Package                        | Description                           | Status      |
+| ------------------------------ | ------------------------------------- | ----------- |
 | `@loom-loyalty/meridian-types` | Shared TypeScript types from the spec | In progress |
-| `@loom-loyalty/meridian-wire` | MessagePack/WebSocket wire protocol | In progress |
+| `@loom-loyalty/meridian-wire`  | MessagePack/WebSocket wire protocol   | In progress |
 
 ## Roadmap
 
 These packages are named across the specs and will be published as they land. They do not exist in this tree today.
 
-| Package | Description | Target |
-|---|---|---|
+| Package                                     | Description                                      | Target       |
+| ------------------------------------------- | ------------------------------------------------ | ------------ |
 | `@loom-loyalty/meridian-priority-reference` | Reference priority engine (WSJF-derived formula) | v1.0-draft.5 |
-| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects adapter | v1.0 |
-| `@loom-loyalty/meridian-conformance` | Runtime conformance test suite | v1.0 |
-| `@loom-loyalty/meridian-proxy` | Credential brokering integration proxy | v1.0 |
+| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects adapter     | v1.0         |
+| `@loom-loyalty/meridian-conformance`        | Runtime conformance test suite                   | v1.0         |
+| `@loom-loyalty/meridian-proxy`              | Credential brokering integration proxy           | v1.0         |
 
 ## Related projects
 

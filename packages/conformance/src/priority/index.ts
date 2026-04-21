@@ -10,5 +10,8 @@
  * response, and passes both to `assertConformantResponse`.
  */
 
-export { assertConformantResponse, type ConformanceResult } from "./assertions.js";
+export {
+  assertConformantResponse,
+  type ConformanceResult,
+} from "./assertions.js";
 export { referenceScenarios, type ConformanceScenario } from "./scenarios.js";

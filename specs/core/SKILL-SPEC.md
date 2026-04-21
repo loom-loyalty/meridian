@@ -26,6 +26,7 @@ Skills use a three-stage progressive disclosure model to minimize token consumpt
 Loaded at system startup for all agents. Must be lightweight (target: under 100 tokens per agent).
 
 Contains:
+
 - `name` — human-readable skill name
 - `description` — what this agent does (1-2 sentences)
 - `domains` — which domains this agent participates in
@@ -38,6 +39,7 @@ Contains:
 Loaded when the skill is selected for use. Target: under 5,000 tokens.
 
 Contains:
+
 - Full capability manifest with input/output contracts
 - Tool declarations (what tools this agent uses)
 - Cost breakdown per action type
@@ -49,6 +51,7 @@ Contains:
 Loaded on demand during execution. No token limit (loaded into agent context as needed).
 
 Contains:
+
 - Full system prompt and behavioral instructions
 - Domain-specific playbooks and decision trees
 - Reference documentation, schemas, and examples
@@ -138,15 +141,17 @@ The marketplace layer (outside this spec) handles discovery, curation, and trust
 ## 6. Skill file conventions
 
 Skills may be declared as:
+
 - A single YAML/JSON file (e.g., `skill.yaml`)
 - A directory with `skill.yaml` at the root and supporting files (playbooks, schemas, examples) alongside it
 - A `SKILL.md` file following the Markdown-based convention (compatible with existing ecosystem patterns)
 
 Meridian runtimes scan conventional directories for skill declarations:
+
 - `~/.meridian/skills/` for user-level skills
 - `.meridian/skills/` for project-level skills
 - Registry endpoints for published marketplace skills
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

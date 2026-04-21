@@ -3,7 +3,13 @@
  * Defines the structured signals every Meridian component emits.
  */
 
-import type { AgentId, DomainId, WorkItemId, Timestamp, Cost } from "./primitives.js";
+import type {
+  AgentId,
+  DomainId,
+  WorkItemId,
+  Timestamp,
+  Cost,
+} from "./primitives.js";
 import type { QualitySignal, CompetingContext } from "./quality.js";
 
 /** Feedback tiers determine what the system requires from each component. */

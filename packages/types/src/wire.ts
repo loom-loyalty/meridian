@@ -5,33 +5,44 @@
 
 import type { AgentId, DomainId, WorkItemId, Timestamp } from "./primitives.js";
 
-/** Message types that can be sent over the wire. */
-export enum MessageType {
-  /** Direct agent-to-agent message */
-  SEND = 0x01,
-  /** Broadcast to agents matching a selector */
-  BROADCAST = 0x02,
-  /** Response to a correlated request */
-  REPLY = 0x03,
-  /** Feedback signal (heartbeat, error, metric, insight, etc.) */
-  FEEDBACK = 0x10,
-  /** Work item creation or update */
-  WORK_ITEM = 0x20,
-  /** Lifecycle event (spawn, suspend, resume, terminate) */
-  LIFECYCLE = 0x30,
+/**
+ * Message types that can be sent over the wire.
+ *
+ * Exported as a `const` object plus a derived union type. This keeps
+ * symbolic access (`MessageType.SEND`) while matching the project
+ * convention of zero-runtime-cost closed-value types (every other
+ * closed-value type in this package is a string literal union). The
+ * derived numeric union serializes directly to the wire without a
+ * runtime enum object.
+ */
+export const MessageType = {
+  /** Direct agent-to-agent message. */
+  SEND: 0x01,
+  /** Broadcast to agents matching a selector. */
+  BROADCAST: 0x02,
+  /** Response to a correlated request. */
+  REPLY: 0x03,
+  /** Feedback signal (heartbeat, error, metric, insight, etc.). */
+  FEEDBACK: 0x10,
+  /** Work item creation or update. */
+  WORK_ITEM: 0x20,
+  /** Lifecycle event (spawn, suspend, resume, terminate). */
+  LIFECYCLE: 0x30,
   /**
    * Agent query to a domain-local priority engine.
    * Payload: AgentPriorityQuery. See PRIORITY-ENGINE-SPEC.md §4.
    */
-  PRIORITY_QUERY = 0x40,
+  PRIORITY_QUERY: 0x40,
   /**
    * Response from a domain-local priority engine.
    * Payload: AgentPriorityResponse. See PRIORITY-ENGINE-SPEC.md §4.
    */
-  PRIORITY_RESPONSE = 0x41,
-  /** System control (ping, pong, auth) */
-  SYSTEM = 0xFF,
-}
+  PRIORITY_RESPONSE: 0x41,
+  /** System control (ping, pong, auth). */
+  SYSTEM: 0xff,
+} as const;
+
+export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
 /**
  * Wire frame header. Present on every message.
