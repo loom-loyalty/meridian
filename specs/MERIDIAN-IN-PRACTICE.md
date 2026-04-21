@@ -8,7 +8,7 @@ This document is the narrative companion to the formal specs in [`core/`](core/)
 
 ## Opening scene
 
-> **[NATE: opening scene prose — polish the voice.]** Draft seed: "Picture a loyalty company with eight people. Three of them are stewards. Five of them build. The rest of the operational work — reading query plans at 2am, watching funnel conversion drift, reconciling usage reports, filing support tickets about partner onboarding, catching the regression before the customer does — runs on domain agents. The agents work against real dollar budgets. The stewards set direction and gate decisions. The costs are visible in real time. That company is running lean on Meridian. Here's what that looks like in the code."
+Picture a loyalty company with eight people. Three of them are stewards. Five of them build. The rest of the operational work — reading query plans at 2am, watching funnel conversion drift, reconciling usage reports, filing support tickets about partner onboarding, catching the regression before the customer does — runs on domain agents. The agents work against real dollar budgets. The stewards set direction and gate decisions. The costs are visible in real time. That company is running lean on Meridian. Here's what that looks like in the code.
 
 ---
 

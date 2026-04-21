@@ -30,7 +30,7 @@ A priority engine answers one question: given the open work items visible to a d
 - The lifecycle of a `"__priority__"` endpoint (spawn timing, restart semantics, replication). Runtime's choice.
 - Cross-implementation ordering conformance. Two conformant engines MAY rank the same inputs differently.
 
-> `[NATE: consider whether the last bullet in §1 is clearly stated. The principle — data contracts yes, scoring algorithms no — is the most important positioning move in this whole spec. Worth an extra sentence of editorial voice here.]`
+The principle: data contracts are the spec's job; scoring algorithms are the implementation's. An adopter who wants Loom's formula ships the reference package. An adopter who wants to invent their own keeps the same `AgentPriorityResponse` shape and passes conformance — other agents and stewards interoperate with them either way.
 
 ---
 
@@ -76,7 +76,7 @@ interface CircuitBreakerConfig {
 
 ### 2.3 AgentPriorityQuery and AgentPriorityResponse
 
-See the type package for the full shape. The response's `priorityScore` field is `number | null`; `null` means the item escalated (see §3) and is not eligible for agents to pull. `explanation` is a one-line string; format is non-normative but `[NATE: suggest a canonical format in the Implementation Guidance section — this is what readers will copy verbatim]`.
+See the type package for the full shape. The response's `priorityScore` field is `number | null`; `null` means the item escalated (see §3) and is not eligible for agents to pull. `explanation` is a one-line string; format is non-normative, but the reference implementation produces a canonical shape documented in §8.6 that adopters can either copy verbatim or use as a starting point.
 
 ### 2.4 PriorityLearner (experimental)
 
@@ -110,7 +110,7 @@ On trigger, the engine MUST:
 
 Note that `ErrorFeedback.blastRadius` and `CompetingContext.impact.blastRadius` are **different enums** with different vocabularies. The circuit breaker consumes the former; the escalation mechanism in §4 consumes the latter. Conflating them is a common implementation mistake.
 
-> `[NATE: the three-part AND trigger may be too strict. Consider whether "first" frequency should also trigger, or whether recurring/escalating ones are the right focus. Gut check against what you've seen at Loom.]`
+The three-part AND trigger is intentionally narrow so the breaker fires only for the "system is genuinely on fire" case. Domains whose ops model wants a looser trigger (for example, treating every `severity: high` + `recovered: false` event as breaker-worthy) should widen `CircuitBreakerConfig.criticalSeverityThreshold` or `bypassBlastRadius` rather than lowering the `requireRecoveredFalse` gate, since recovered errors are by definition out of the critical path.
 
 ---
 
@@ -236,9 +236,9 @@ regressionMultiplier  = min(regressionMultiplierCap, 1 + 1 / daysSinceClosed)
 - `frequencyWeight` (1/1.5/3): escalating errors should double the time-criticality of a first occurrence to surface recurrence to the steward without completely crowding out fresh critical work.
 - `timeCriticalityCap` (2.0): prevents a stale item (high age × high severity) from exceeding 2x its own cost-of-not-building. Without the cap, a 100-day-old critical error would dwarf every other input.
 - `regressionMultiplierCap` (2.0): same-day reopens cap at 2x priority. A work item reopened once, 10 days after closure, scores ~1.1x a non-regression peer.
-- `usdPerAffectedConsumer` (1.0): $1 per affected user as a floor. Tune per-domain — Loom tunes this higher in the product domain than in infrastructure.
+- `usdPerAffectedConsumer` (1.0): $1 per affected user as a floor. Tune per-domain — the reference ships `PRODUCT_WEIGHT_PROFILE` with this at 5.0, since product insights typically care about user-count signal more heavily than infrastructure does.
 
-> `[NATE: the "8.2 Rationale" prose is the most important block in the non-normative section. Readers who care about formulas will check whether these numbers are defensible. Expand the Loom-specific context you have — why 4 for critical, not 5; why cap at 2.0, not 3.0. Your voice here carries more weight than the actual numbers.]`
+None of these numbers are sacred. An implementation that decides `critical` deserves a 5x weight instead of 4x, or that the regression cap should be 3x for a faster-moving ops model, is still conformant — only the response shape is checked. The reference values reflect what Loom uses in production and are offered as a starting point, not a prescription.
 
 ### 8.3 Regression sensitivity
 
@@ -284,7 +284,7 @@ Examples:
 
 When the domain's `currentSpendUsd / monthlyLimitUsd` ratio exceeds 0.8, a budget annotation is appended after a bullet. When the budget reading is older than 60 seconds, a staleness warning appears in the annotation. Rankings are not modified by budget; this is an explainability-only affordance.
 
-> `[NATE: the budget staleness convention is worth a Loom-specific note. Why 60 seconds? What's the cost-attribution pipeline timing you're expecting?]`
+The 60-second threshold is the reference's judgment call about how fresh a budget reading needs to be before a steward should trust it as real-time signal. It assumes a cost-attribution pipeline that pushes domain spend updates at least once per minute. Runtimes with slower cost pipelines should widen this threshold, or drop the staleness warning convention entirely, rather than ship a `why` line that encourages stewards to trust a reading the pipeline cannot actually keep current.
 
 ---
 
