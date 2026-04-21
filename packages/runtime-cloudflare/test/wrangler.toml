@@ -1,0 +1,20 @@
+# Test-only wrangler config. Points at `test/test-worker.ts` which
+# re-exports the DO classes for Miniflare to boot. The adopter-facing
+# template lives at `../wrangler.toml.example`.
+
+name = "meridian-runtime-cloudflare-test"
+main = "./test-worker.ts"
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "AGENT"
+class_name = "AgentDurableObject"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AgentDurableObject", "RegistryDurableObject"]

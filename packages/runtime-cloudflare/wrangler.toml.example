@@ -1,0 +1,30 @@
+# wrangler.toml.example — minimum config for a Meridian runtime on Cloudflare.
+#
+# Adopters copy this to `wrangler.toml` and fill in:
+#   - name, account_id (via `wrangler login`)
+#   - MERIDIAN_ADMIN_TOKEN via `wrangler secret put`
+#
+# See DEPLOY.md for the full 10-15 min walkthrough.
+
+name = "my-meridian-runtime"
+main = "src/worker.ts"
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Object bindings. The AgentDurableObject and RegistryDurableObject
+# classes are exported from @loom-loyalty/meridian-runtime-cloudflare and must
+# be re-exported from your Worker's entrypoint.
+
+[[durable_objects.bindings]]
+name = "AGENT"
+class_name = "AgentDurableObject"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDurableObject"
+
+# SQLite-backed Durable Objects (required for agent state persistence).
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AgentDurableObject", "RegistryDurableObject"]

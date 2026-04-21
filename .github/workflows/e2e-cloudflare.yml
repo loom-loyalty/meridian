@@ -1,0 +1,129 @@
+name: E2E (Cloudflare)
+
+# Deploys `runtime-cloudflare/test/test-worker.ts` to a real Cloudflare
+# account, runs a smoke check against the live endpoint, then tears down.
+# Skips gracefully until CLOUDFLARE_API_TOKEN is set in repo secrets, so
+# this workflow is safe to merge before the CF-side setup is complete.
+#
+# All inputs come from repo secrets or step outputs this workflow
+# generates itself; no user-controlled event payloads flow into `run:`
+# commands. See the security notes in DEPLOY-CI.md.
+#
+# Once the eng-review decision from /plan-eng-review lands in M2
+# (real-CF conformance scenarios), this workflow grows to invoke the
+# conformance suite against the live deploy instead of the current
+# smoke-only check.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  # One live deploy at a time across all triggers. The worker name is
+  # fixed, so parallel deploys would clobber each other's state.
+  group: e2e-cloudflare
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Check CF secrets
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'e2e-cloudflare')
+    steps:
+      - id: check
+        env:
+          HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+          HAS_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: |
+          if [ "$HAS_TOKEN" = "true" ] && [ "$HAS_ACCOUNT" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID not set; skipping real-CF E2E. See packages/runtime-cloudflare/DEPLOY-CI.md."
+          fi
+
+  e2e:
+    name: Deploy + smoke + teardown
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: meridian-runtime-cloudflare-ci
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build runtime-cloudflare
+        run: pnpm --filter @loom-loyalty/meridian-runtime-cloudflare build
+
+      - name: Deploy test worker to Cloudflare
+        id: deploy
+        working-directory: packages/runtime-cloudflare
+        run: |
+          pnpm wrangler deploy \
+            --config test/wrangler-ci.toml \
+            --name "$WORKER_NAME" \
+            --keep-vars 2>&1 | tee deploy.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | tail -1)
+          if [ -z "$URL" ]; then
+            echo "::error::Could not parse deployed URL from wrangler output"
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $URL"
+
+      - name: Smoke — fetch root endpoint
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6; do
+            RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 10 "$URL/" || true)
+            BODY=$(echo "$RESPONSE" | head -n -1)
+            CODE=$(echo "$RESPONSE" | tail -n 1)
+            if [ "$CODE" = "200" ]; then
+              echo "Smoke OK (attempt $i): body=$BODY"
+              echo "$BODY" | jq -e '.runtime == "meridian-cloudflare" and .milestone == "m1-walking-skeleton"'
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $CODE; retrying in 5s..."
+            sleep 5
+          done
+          echo "::error::Smoke check failed after 6 attempts"
+          exit 1
+
+      - name: Teardown — delete CI worker
+        # Always runs. DOs created by a deleted worker persist until CF
+        # garbage-collects them; the M1 smoke path spawns no DOs.
+        if: always()
+        working-directory: packages/runtime-cloudflare
+        run: |
+          pnpm wrangler delete \
+            --name "$WORKER_NAME" \
+            --force \
+            || echo "::warning::Teardown failed or worker did not exist"
