@@ -96,22 +96,17 @@ pnpm test
 
 ### Setup notes
 
-The project pins `pnpm@9.15.0` via the `packageManager` field. Node 20+ is required, and `corepack` handles the pnpm install automatically on any reasonably recent corepack version.
+The project pins `pnpm@9.15.0` via the `packageManager` field and requires Node 20+. **Use a Node LTS release (20 or 22).** Node 22 is the current active LTS through April 2027; Node 20 is in maintenance through April 2026. CI runs on Node 20.
 
-If `pnpm install` fails with a corepack signature error (`Cannot find matching keyid`), your Node's bundled corepack is trying to fetch the latest pnpm release's signing key and failing to verify it. The project already pins `pnpm@9.15.0` via the `packageManager` field, so the fix is to tell corepack not to look beyond the pinned version:
+Non-LTS Node releases (21, 23, 25) are "Current" line and are not officially supported by most tooling in the JS ecosystem. `npm` warns `EBADENGINE` on the latest `corepack`, `pnpm` may hit a bundled-corepack signature-verification bug, and any number of transitive deps will flake in ways you can't fix in this repo.
+
+If you are stuck on non-LTS Node for some other reason and `pnpm install` fails with `Cannot find matching keyid`, this env var works around the corepack signature issue by using the pinned `packageManager` version directly:
 
 ```bash
 COREPACK_DEFAULT_TO_LATEST=0 pnpm install
 ```
 
-Export that env var in your shell rc (`.zshrc`, `.bashrc`) to make it permanent. This is the reliable fix regardless of Node version.
-
-Two alternatives that sometimes work:
-
-1. `npm install -g corepack@latest` (requires sudo) refreshes corepack's built-in keyring. Only viable on Node LTS releases (20, 22, 24+) — the latest corepack rejects non-LTS Node versions (21, 23, 25) with `EBADENGINE`. If you're on an odd-numbered Node, use the env var above or switch to an LTS.
-2. Use Node LTS (20 or 22) instead of the current release. LTS ships a stable corepack that usually works without the env var.
-
-This is a local environment issue, not a project configuration one — CI runs fine on Node 20.
+Export it in your shell rc (`.zshrc`, `.bashrc`) to make it permanent. CI runs fine without it.
 
 ### Contributing
 
