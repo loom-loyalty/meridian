@@ -27,11 +27,17 @@ import type {
   AgentId,
   ListOptions,
   ListResult,
+  ScheduleId,
+  ScheduleInfo,
   SpawnConfig,
   Timestamp,
 } from "@loom-loyalty/meridian-types";
 
 import { CfLifecyclePlugin } from "./primitives/cf-lifecycle.js";
+import {
+  CfSchedulingPlugin,
+  type FiredSchedule,
+} from "./primitives/cf-scheduling.js";
 import { CfStatePlugin } from "./primitives/cf-state.js";
 
 export interface AgentEnv {
@@ -50,11 +56,25 @@ const INBOX_KEY = "__inbox__";
 export class AgentDurableObject extends DurableObject<AgentEnv> {
   private readonly lifecycle: CfLifecyclePlugin;
   private readonly state: CfStatePlugin;
+  private readonly scheduling: CfSchedulingPlugin;
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env);
     this.lifecycle = new CfLifecyclePlugin(ctx);
     this.state = new CfStatePlugin(ctx);
+    this.scheduling = new CfSchedulingPlugin(ctx);
+  }
+
+  /**
+   * DO alarm hook — workerd calls this when the stored alarm fires.
+   * The scheduling plugin walks every registered schedule, fires the
+   * due ones (including cron coalescing for ticks missed during DO
+   * downtime), and reprograms the alarm for the next due schedule.
+   * Any other future primitive that uses alarms (e.g. delayed
+   * at-least-once redelivery in M2c) hooks in here too.
+   */
+  async alarm(): Promise<void> {
+    await this.scheduling.onAlarm();
   }
 
   // ── Lifecycle ────────────────────────────────────────────
@@ -123,6 +143,36 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
    */
   async incrementAtomic(key: string, delta = 1): Promise<number> {
     return this.state.update<number>(key, (c) => (c ?? 0) + delta);
+  }
+
+  // ── Scheduling ───────────────────────────────────────────
+
+  async scheduleAt(when: Timestamp, payload?: unknown): Promise<ScheduleId> {
+    await this.lifecycle.requireMeta();
+    return this.scheduling.scheduleAt(when, payload);
+  }
+
+  async scheduleCron(cron: string, payload?: unknown): Promise<ScheduleId> {
+    await this.lifecycle.requireMeta();
+    return this.scheduling.scheduleCron(cron, payload);
+  }
+
+  async cancelSchedule(scheduleId: ScheduleId): Promise<void> {
+    await this.lifecycle.requireMeta();
+    return this.scheduling.cancel(scheduleId);
+  }
+
+  async listSchedules(): Promise<ScheduleInfo[]> {
+    await this.lifecycle.requireMeta();
+    return this.scheduling.listSchedules();
+  }
+
+  /**
+   * Pull the fired-schedule log. Test-facing in M2b; M2c replaces
+   * this with direct user `onSchedule` hook invocation.
+   */
+  async drainFiredSchedules(): Promise<FiredSchedule[]> {
+    return this.scheduling.drainFiredSchedules();
   }
 
   // ── Transport (M1 inbox model; M2c replaces) ─────────────
