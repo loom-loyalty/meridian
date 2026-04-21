@@ -1,9 +1,13 @@
 # Meridian Feedback Contract Specification
 
-**Version:** 1.0.0-draft.1
+**Version:** 1.0.0-draft.2
 **Status:** Draft
 **Date:** April 2026
 **License:** CC BY 4.0
+
+> Meridian is the protocol for systems where agents operate, humans steward, and costs are visible in real time. It defines the wire format, runtime primitives, feedback contract, and skill declaration that let mixed agent-and-human organizations run lean — small teams of stewards setting direction and gating decisions, while domain agents handle operational work within visible budgets.
+
+This document is the feedback contract: the envelope, tier classification, and required + expected signal types every Meridian-compatible component emits. Optional-tier signal types (quality signals, stakeholder impact, competing context, pattern recognition) and the processing mechanisms that consume them are defined in [`../patterns/FEEDBACK-PROCESSING-SPEC.md`](../patterns/FEEDBACK-PROCESSING-SPEC.md).
 
 ---
 
@@ -60,15 +64,7 @@ Components should produce these. The system works without them but is less intel
 
 ### Optional (makes the system smarter over time)
 
-Not required, but the more components produce these, the more intelligent the system becomes.
-
-**Quality signals.** Structured validation results with individual check outcomes, scores, and fix suggestions. A quality signal carries a result (`pass`, `fail`, `warn`), a category (`architectural`, `behavioral`, `performance`, `security`, `documentation`, `testing`, `entropy`, `custom`), individual `QualityCheck` results with auto-fixability flags, and which enforcement tier (`mechanical`, `agent_review`, `human_gate`) produced the result.
-
-**User and stakeholder impact.** Who does this affect? How many users? Which customers? What revenue is attached?
-
-**Competing context.** Machine-readable counter-evidence when a proposed change would affect a component. Carries structured impact assessment: affected consumer count, revenue at risk, blast radius (`isolated`, `module`, `service`, `domain`, `system`), breaking dependencies, a human-readable argument, an optional suggested alternative, and a confidence score.
-
-**Pattern recognition.** "This is the third time this week I've seen this failure pattern." "This type of change has caused regressions 4 out of 5 times."
+Not required, but the more components produce these, the more intelligent the system becomes. The specific signal types (quality signals, user/stakeholder impact, competing context, pattern recognition) and the processing mechanisms that consume them are defined in [`../patterns/FEEDBACK-PROCESSING-SPEC.md`](../patterns/FEEDBACK-PROCESSING-SPEC.md).
 
 ---
 
@@ -100,7 +96,13 @@ Individual signal types extend this envelope with type-specific fields. See `@lo
 
 ---
 
-## 5. Versioning
+## 5. Security: signal authenticity
+
+Signals that carry a `sourceAgentId` or similar identity claim must be validated by the runtime. In particular, runtimes MUST validate that `CompetingContext.sourceAgentId` (defined in [`../patterns/FEEDBACK-PROCESSING-SPEC.md`](../patterns/FEEDBACK-PROCESSING-SPEC.md)) matches the authenticated agent emitting the signal. Contexts that fail this check MUST be rejected with `PERMISSION_DENIED`. This is defense-in-depth: downstream consumers such as the priority engine (see [`../patterns/PRIORITY-ENGINE-SPEC.md`](../patterns/PRIORITY-ENGINE-SPEC.md), forthcoming in v1.0-draft.5) cannot make the check alone, since by the time an invalid context reaches them the rejection surface has moved out of the trust boundary.
+
+---
+
+## 6. Versioning
 
 This specification follows semantic versioning. The feedback signal types are versioned alongside the `@loom-loyalty/meridian-types` package. New signal types can be added in minor versions. Existing signal type shapes are frozen within a major version.
 

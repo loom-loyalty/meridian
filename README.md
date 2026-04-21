@@ -1,8 +1,6 @@
 # Meridian
 
-**Where agents, humans, and infrastructure align.**
-
-Meridian is the open protocol for agentic systems. It defines how agents, humans, and infrastructure communicate, report state, and participate in a shared feedback loop that makes the system smarter with every action.
+> Meridian is the protocol for systems where agents operate, humans steward, and costs are visible in real time. It defines the wire format, runtime primitives, feedback contract, and skill declaration that let mixed agent-and-human organizations run lean — small teams of stewards setting direction and gating decisions, while domain agents handle operational work within visible budgets.
 
 Stewarded by [Loom Loyalty](https://github.com/loom-loyalty). Licensed under Apache 2.0 (code) and CC BY 4.0 (specs).
 
@@ -10,14 +8,22 @@ Stewarded by [Loom Loyalty](https://github.com/loom-loyalty). Licensed under Apa
 
 ## What Meridian defines
 
-Meridian is a protocol specification with six components:
+Meridian is split into a protocol-shaped core and a set of opinionated operating patterns:
 
-1. **Feedback contract** — structured tiers (required, expected, optional) for what every component must report: heartbeats, cost, errors, dependencies, metrics, insights, quality signals
-2. **Work item schema** — every unit of work carries two cost estimates (cost to build, cost of NOT building) in real dollars, plus domain assignment, confidence, and lineage
-3. **Domain model** — organizational primitives based on accountability, not org charts, with human stewards who own budget, gates, and direction
-4. **Feedback processing** — routing, conflict resolution, deduplication, cooldown, and graduated enforcement (mechanical → agent review → human gate)
-5. **Skill declaration** — three-stage progressive disclosure for agent capabilities, versioning, and marketplace discovery
-6. **Runtime spec** — six primitives (lifecycle, state, scheduling, messaging, resource limits, observability) that any platform must implement to host Meridian-compatible agents
+**Core** (`specs/core/`) — any implementation claiming Meridian conformance implements these primitives.
+
+1. **Wire protocol** — MessagePack frames over WebSocket, frame header shape, message types, agent discovery
+2. **Runtime primitives** — lifecycle, state, scheduling, message transport, resource limits, observability
+3. **Feedback contract** — envelope, tier classification, required + expected signal types
+4. **Skill declaration** — three-stage progressive disclosure for agent capabilities
+
+**Operating patterns** (`specs/patterns/`) — the opinionated layer Loom Loyalty uses. Not required for core conformance, but what makes Meridian distinctive.
+
+5. **Domain model** — organizational primitives based on accountability, with human stewards who own budget, gates, and direction
+6. **Work item schema** — every unit of work carries two cost estimates (cost to build, cost of NOT building) in real dollars
+7. **Feedback processing** — optional-tier signals (quality, competing context, pattern recognition) plus routing, conflict resolution, deduplication, cooldown, and graduated enforcement (mechanical → agent review → human gate)
+
+A priority engine spec (`specs/patterns/PRIORITY-ENGINE-SPEC.md`) lands in v1.0-draft.5 along with a reference implementation at `@loom-loyalty/meridian-priority-reference`.
 
 ## Wire protocol
 
@@ -29,81 +35,52 @@ Agent discovery uses **Agent Cards** served at `/.well-known/agent-card.json`. A
 
 ```
 meridian/
-├── specs/                          # Protocol specifications (CC BY 4.0)
-│   ├── RUNTIME-SPEC.md             # Runtime primitive contract
-│   ├── FEEDBACK-SPEC.md            # Feedback contract (planned)
-│   ├── WORK-ITEM-SPEC.md           # Work item schema (planned)
-│   ├── DOMAIN-SPEC.md              # Domain model (planned)
-│   ├── SKILL-SPEC.md               # Skill declaration (planned)
-│   └── WIRE-PROTOCOL.md            # Wire format specification (planned)
+├── specs/                                # Protocol specifications (CC BY 4.0)
+│   ├── README.md                         # Reading order
+│   ├── MERIDIAN-IN-PRACTICE.md           # Narrative walkthrough
+│   ├── core/
+│   │   ├── README.md
+│   │   ├── WIRE-PROTOCOL-SPEC.md         # Wire format specification
+│   │   ├── RUNTIME-SPEC.md               # Runtime primitive contract
+│   │   ├── FEEDBACK-SPEC.md              # Feedback envelope + required/expected tiers
+│   │   └── SKILL-SPEC.md                 # Skill declaration
+│   └── patterns/
+│       ├── README.md
+│       ├── DOMAIN-SPEC.md                # Domain model
+│       ├── WORK-ITEM-SPEC.md             # Work item schema
+│       └── FEEDBACK-PROCESSING-SPEC.md   # Optional-tier signals + processing
 │
 ├── packages/
-│   ├── types/                      # @loom-loyalty/meridian-types
+│   ├── types/                            # @loom-loyalty/meridian-types
 │   │   └── src/
-│   │       ├── primitives.ts       # Runtime primitive interfaces
-│   │       ├── feedback.ts         # Feedback contract types
-│   │       ├── work-item.ts        # Work item schema types
-│   │       ├── domain.ts           # Domain model types
-│   │       ├── wire.ts             # Wire protocol frame types
-│   │       ├── quality.ts          # Quality signal, enforcement tier, competing context
-│   │       ├── permissions.ts      # PermissionScope, InvocationContext
-│   │       ├── errors.ts           # RuntimeError, ErrorCategory
+│   │       ├── primitives.ts             # Runtime primitive interfaces
+│   │       ├── runtime.ts                # Runtime interface declarations
+│   │       ├── feedback.ts               # Feedback contract types
+│   │       ├── work-item.ts              # Work item schema types
+│   │       ├── domain.ts                 # Domain model types
+│   │       ├── wire.ts                   # Wire protocol frame types
+│   │       ├── quality.ts                # Quality signal, enforcement tier, competing context
+│   │       ├── permissions.ts            # PermissionScope, InvocationContext
+│   │       ├── errors.ts                 # RuntimeError, ErrorCategory
 │   │       └── index.ts
 │   │
-│   ├── runtime-cloudflare/         # @loom-loyalty/meridian-runtime-cloudflare
-│   │   └── src/
-│   │       ├── agent-do.ts         # AgentDurableObject class
-│   │       ├── registry-do.ts      # AgentRegistry Durable Object
-│   │       ├── lifecycle.ts        # AgentLifecycle implementation
-│   │       ├── state.ts            # StatePersistence implementation
-│   │       ├── scheduling.ts       # Scheduling implementation
-│   │       ├── transport.ts        # MessageTransport implementation
-│   │       ├── resources.ts        # ResourceManagement implementation
-│   │       ├── observability.ts    # Observability implementation
-│   │       └── index.ts
-│   │
-│   ├── wire/                       # @loom-loyalty/meridian-wire
-│   │   └── src/
-│   │       ├── codec.ts            # MessagePack encode/decode
-│   │       ├── frame.ts            # Frame header/payload structure
-│   │       ├── websocket.ts        # WebSocket transport layer
-│   │       └── index.ts
-│   │
-│   ├── conformance/                # @loom-loyalty/meridian-conformance
-│   │   └── src/
-│   │       ├── lifecycle.test.ts
-│   │       ├── state.test.ts
-│   │       ├── scheduling.test.ts
-│   │       ├── transport.test.ts
-│   │       ├── resources.test.ts
-│   │       ├── observability.test.ts
-│   │       └── index.ts
-│   │
-│   └── integration-proxy/          # @loom-loyalty/meridian-proxy
+│   └── wire/                             # @loom-loyalty/meridian-wire
 │       └── src/
-│           ├── proxy.ts            # Request validation & dispatch
-│           ├── session.ts          # Session token management
-│           ├── registry.ts         # Service package registration
+│           ├── codec.ts                  # MessagePack encode/decode
+│           ├── frame.ts                  # Frame header/payload structure
+│           ├── websocket.ts              # WebSocket transport layer
 │           └── index.ts
 │
 ├── examples/
-│   ├── hello-agent/                # Minimal agent example
-│   ├── feedback-loop/              # Full feedback loop example
-│   └── two-agents/                 # Agent-to-agent messaging example
-│
-├── .github/
-│   ├── CONTRIBUTING.md
-│   └── workflows/
-│       ├── ci.yml
-│       └── conformance.yml
+│   └── hello-agent/                      # Minimal agent example
 │
 ├── package.json
 ├── pnpm-workspace.yaml
 ├── turbo.json
 ├── tsconfig.base.json
-├── LICENSE                         # Apache 2.0
-├── LICENSE-SPECS                   # CC BY 4.0 (specs only)
-└── README.md                       # This file
+├── LICENSE                               # Apache 2.0
+├── LICENSE-SPECS                         # CC BY 4.0 (specs only)
+└── README.md                             # This file
 ```
 
 ## Getting started
@@ -113,7 +90,7 @@ git clone https://github.com/loom-loyalty/meridian.git
 cd meridian
 pnpm install
 pnpm build
-pnpm test
+pnpm typecheck
 ```
 
 ## Packages
@@ -122,18 +99,25 @@ pnpm test
 |---|---|---|
 | `@loom-loyalty/meridian-types` | Shared TypeScript types from the spec | In progress |
 | `@loom-loyalty/meridian-wire` | MessagePack/WebSocket wire protocol | In progress |
-| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare reference adapter (Apache 2.0) | In progress |
-| `@loom-loyalty/meridian-conformance` | Runtime conformance test suite | Planned |
-| `@loom-loyalty/meridian-proxy` | Credential brokering integration proxy | Planned |
+
+## Roadmap
+
+These packages are named across the specs and will be published as they land. They do not exist in this tree today.
+
+| Package | Description | Target |
+|---|---|---|
+| `@loom-loyalty/meridian-priority-reference` | Reference priority engine (WSJF-derived formula) | v1.0-draft.5 |
+| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects adapter | v1.0 |
+| `@loom-loyalty/meridian-conformance` | Runtime conformance test suite | v1.0 |
+| `@loom-loyalty/meridian-proxy` | Credential brokering integration proxy | v1.0 |
 
 ## Related projects
 
-- **[Shuttle](https://github.com/loom-loyalty/shuttle)** — The first product built on Meridian. An opinionated operating system for companies building with agents and humans together.
 - **[Harness Engineering](https://github.com/Intense-Visions/harness-engineering)** — Quality enforcement framework. Meridian-compatible integration for mechanical constraints, entropy detection, and agent feedback loops.
 
 ## Status
 
-Meridian is in active development. The runtime spec is at v1.0.0-draft.3. The reference adapter is at v0.1. The wire protocol spec is being drafted.
+Meridian is in active development. The runtime spec is at v1.0.0-draft.3. The wire protocol spec is at v1.0.0-draft.1. The full v1.0 set is targeting draft.4 for the structural cleanup landing with this PR, then draft.5 for the priority engine + reference implementation.
 
 This is pre-1.0 software. APIs will change. We welcome feedback via issues and pull requests.
 

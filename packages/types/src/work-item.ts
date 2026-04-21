@@ -45,7 +45,12 @@ export interface WorkItem {
   /** Current status. */
   status: WorkItemStatus;
 
-  /** Priority score computed by the priority engine. */
+  /**
+   * Implementation-defined priority score. See
+   * `specs/patterns/PRIORITY-ENGINE-SPEC.md` (landing in v1.0-draft.5) for
+   * the data contract and `@loom-loyalty/meridian-priority-reference` for
+   * the reference formula.
+   */
   priorityScore?: number;
 
   createdAt: Timestamp;

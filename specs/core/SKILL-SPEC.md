@@ -5,6 +5,10 @@
 **Date:** April 2026
 **License:** CC BY 4.0
 
+> Meridian is the protocol for systems where agents operate, humans steward, and costs are visible in real time. It defines the wire format, runtime primitives, feedback contract, and skill declaration that let mixed agent-and-human organizations run lean — small teams of stewards setting direction and gating decisions, while domain agents handle operational work within visible budgets.
+
+This document defines how agents declare their capabilities: the three-stage progressive disclosure model (discovery, activation, runtime), the declaration format, routing patterns, and versioning rules.
+
 ---
 
 ## 1. Purpose
