@@ -8,7 +8,7 @@ This document is the narrative companion to the formal specs in [`core/`](core/)
 
 ## Opening scene
 
-> **[NATE: opening scene prose — polish the voice.]** Draft seed: "Picture a loyalty company with eight people. Three of them are stewards. Five of them build. The rest of the operational work — reading query plans at 2am, watching funnel conversion drift, reconciling usage reports, filing support tickets about partner onboarding, catching the regression before the customer does — runs on domain agents. The agents work against real dollar budgets. The stewards set direction and gate decisions. The costs are visible in real time. That company is running lean on Meridian. Here's what that looks like in the code."
+Picture a loyalty company with eight people. Three of them are stewards. Five of them build. The rest of the operational work — reading query plans at 2am, watching funnel conversion drift, reconciling usage reports, filing support tickets about partner onboarding, catching the regression before the customer does — runs on domain agents. The agents work against real dollar budgets. The stewards set direction and gate decisions. The costs are visible in real time. That company is running lean on Meridian. Here's what that looks like in the code.
 
 ---
 
@@ -256,7 +256,7 @@ const objection: CompetingContext = {
 
 The product steward sees both sides in one view: the Amplitude agent's `proposed` experiment and the UX agent's competing context. Note what this catches: the objection arrives **before engineering has estimated cost-to-build** — the work item never had to leave `proposed` status for the steward to see that the underlying hypothesis is likely wrong. That's cycles saved on estimation work that would have been wasted.
 
-Blast radius is `module`, which is below the escalation threshold spec'd in the priority engine spec (see `patterns/PRIORITY-ENGINE-SPEC.md`, landing in v1.0-draft.5). At `module`-scope, the decision is steward-judgment; the steward approves the UX agent's alternative.
+Blast radius is `module`, which is below the escalation threshold spec'd in [`patterns/PRIORITY-ENGINE-SPEC.md`](patterns/PRIORITY-ENGINE-SPEC.md) §4. At `module`-scope, the decision is steward-judgment; the steward approves the UX agent's alternative.
 
 The result is written back to the system as a work-item lineage. The Amplitude agent's experiment is superseded with a link to the UX finding; the viewport fix becomes a new `proposed` work item with the UX agent as source (engineering will estimate cost-to-build as before). Both sides are preserved in the audit record.
 

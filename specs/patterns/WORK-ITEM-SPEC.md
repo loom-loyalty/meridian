@@ -39,7 +39,7 @@ Every work item must carry:
 - `costToBuild` — what it costs to do this work. Denominated in USD. Broken down into: tokens, compute, human hours, and any other measurable cost.
 - `costOfNotBuilding` — what it costs to NOT do this work. Denominated in USD. Broken down into: revenue impact, risk exposure, and debt accumulation.
 
-Both are real dollar values, not story points, t-shirt sizes, or Fibonacci numbers. Estimates may be rough, but they must be expressed in dollars so implementations can compare heterogeneous work items (see [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md), landing in v1.0-draft.5, for the data contract Meridian adopters converge on).
+Both are real dollar values, not story points, t-shirt sizes, or Fibonacci numbers. Estimates may be rough, but they must be expressed in dollars so implementations can compare heterogeneous work items (see [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) for the data contract Meridian adopters converge on).
 
 **Domain assignment.** Which domain(s) this work belongs to.
 
@@ -55,7 +55,7 @@ Both are real dollar values, not story points, t-shirt sizes, or Fibonacci numbe
 
 ## 4. Priority scoring
 
-Meridian does not prescribe a specific priority formula. It prescribes the data that must be present for any priority system to work: the two cost estimates, confidence, domain, and lineage. See [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) (forthcoming v1.0-draft.5) for the normative data contracts Meridian adopters share (escalation mechanism, query protocol, weight-profile shape) and for the Loom reference formula that ships in [`@loom-loyalty/meridian-priority-reference`](../../packages/priority-reference/). Other implementations may use the reference, override its weights via `WeightProfile`, or implement their own engine entirely.
+Meridian does not prescribe a specific priority formula. It prescribes the data that must be present for any priority system to work: the two cost estimates, confidence, domain, and lineage. See [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) for the normative data contracts Meridian adopters share (escalation mechanism, query protocol, weight-profile shape) and for the Loom reference formula that ships in [`@loom-loyalty/meridian-priority-reference`](../../packages/priority-reference/). Other implementations may use the reference, override its weights via `WeightProfile`, or implement their own engine entirely.
 
 The recommended approach is a WSJF-inspired formula:
 

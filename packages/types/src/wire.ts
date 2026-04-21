@@ -19,6 +19,16 @@ export enum MessageType {
   WORK_ITEM = 0x20,
   /** Lifecycle event (spawn, suspend, resume, terminate) */
   LIFECYCLE = 0x30,
+  /**
+   * Agent query to a domain-local priority engine.
+   * Payload: AgentPriorityQuery. See PRIORITY-ENGINE-SPEC.md §4.
+   */
+  PRIORITY_QUERY = 0x40,
+  /**
+   * Response from a domain-local priority engine.
+   * Payload: AgentPriorityResponse. See PRIORITY-ENGINE-SPEC.md §4.
+   */
+  PRIORITY_RESPONSE = 0x41,
   /** System control (ping, pong, auth) */
   SYSTEM = 0xFF,
 }
