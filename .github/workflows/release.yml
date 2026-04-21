@@ -40,7 +40,7 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Create Release Pull Request / Tag
+      - name: Create Release Pull Request / Publish
         id: changesets
         uses: changesets/action@v1
         with:
@@ -49,12 +49,12 @@ jobs:
           # each package's CHANGELOG.md. When none remain and packages
           # have been versioned, the publish command runs.
           version: pnpm changeset version
-          # `changeset tag` creates git tags + GitHub Releases from the
-          # versioned packages without publishing to npm. Swap to
-          # `pnpm changeset publish` once NPM_TOKEN is set in secrets.
-          publish: pnpm changeset tag
+          # `changeset publish` runs `npm publish` on each package with
+          # a version not yet on the registry, then creates git tags
+          # and GitHub Releases. Requires NPM_TOKEN (see env below).
+          publish: pnpm changeset publish
           commit: "chore(release): version packages"
           title: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # NPM_TOKEN: ${{ secrets.NPM_TOKEN }}  # enable once secret is set
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
