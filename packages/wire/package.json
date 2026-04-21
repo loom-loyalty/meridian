@@ -1,0 +1,28 @@
+{
+  "name": "@loom-loyalty/meridian-wire",
+  "version": "0.1.0",
+  "description": "MessagePack/WebSocket wire protocol for Meridian agent-to-agent communication",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@loom-loyalty/meridian-types": "workspace:*",
+    "msgpackr": "^1.11.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@meridian/example-hello-agent",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Minimal Meridian agent example",
+  "type": "module",
+  "scripts": {
+    "build": "echo 'example - no build needed'",
+    "start": "echo 'See README.md for usage'"
+  },
+  "dependencies": {
+    "@loom-loyalty/meridian-types": "workspace:*",
+    "@loom-loyalty/meridian-wire": "workspace:*"
+  }
+}

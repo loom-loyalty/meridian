@@ -1,0 +1,29 @@
+{
+  "name": "meridian",
+  "private": true,
+  "description": "The open protocol for agentic systems",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loom-loyalty/meridian.git"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.4.0",
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  }
+}

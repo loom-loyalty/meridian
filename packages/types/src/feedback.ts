@@ -1,0 +1,151 @@
+/**
+ * Feedback contract types.
+ * Defines the structured signals every Meridian component emits.
+ */
+
+import type { AgentId, DomainId, WorkItemId, Timestamp, Cost } from "./primitives.js";
+import type { QualitySignal, CompetingContext } from "./quality.js";
+
+/** Feedback tiers determine what the system requires from each component. */
+export type FeedbackTier = "required" | "expected" | "optional";
+
+/** Heartbeat status for required feedback. */
+export type AgentStatus =
+  | "running"
+  | "degraded"
+  | "overloaded"
+  | "initializing"
+  | "draining"
+  | "offline";
+
+/** Required: heartbeat signal. */
+export interface HeartbeatFeedback {
+  tier: "required";
+  type: "heartbeat";
+  agentId: AgentId;
+  domain: DomainId;
+  status: AgentStatus;
+  timestamp: Timestamp;
+}
+
+/** Required: cost attribution signal. */
+export interface CostFeedback {
+  tier: "required";
+  type: "cost";
+  agentId: AgentId;
+  cost: Cost;
+  breakdown?: {
+    compute?: number;
+    tokensInput?: number;
+    tokensOutput?: number;
+    toolCalls?: number;
+    storage?: number;
+    network?: number;
+  };
+  timestamp: Timestamp;
+}
+
+/** Required: structured error signal. */
+export interface ErrorFeedback {
+  tier: "required";
+  type: "error";
+  agentId: AgentId;
+  severity: "critical" | "high" | "medium" | "low";
+  category: string;
+  message: string;
+  frequency: "first" | "recurring" | "escalating";
+  blastRadius: "user" | "customer" | "all_customers" | "internal";
+  recovered: boolean;
+  timestamp: Timestamp;
+}
+
+/** Required: dependency declaration. */
+export interface DependencyFeedback {
+  tier: "required";
+  type: "dependencies";
+  agentId: AgentId;
+  dependsOn: string[];
+  dependedOnBy: string[];
+  context?: Record<string, unknown>;
+  timestamp: Timestamp;
+}
+
+/** Expected: metric with baseline. */
+export interface MetricFeedback {
+  tier: "expected";
+  type: "metric";
+  agentId: AgentId;
+  name: string;
+  value: number;
+  baseline?: number;
+  unit?: string;
+  timestamp: Timestamp;
+}
+
+/** Expected: insight with confidence. */
+export interface InsightFeedback {
+  tier: "expected";
+  type: "insight";
+  agentId: AgentId;
+  confidence: number;
+  message: string;
+  category: string;
+  evidence?: unknown;
+  suggestedAction?: string;
+  timestamp: Timestamp;
+}
+
+/** Expected: capacity and headroom. */
+export interface CapacityFeedback {
+  tier: "expected";
+  type: "capacity";
+  agentId: AgentId;
+  current: number;
+  max: number;
+  unit: string;
+  timestamp: Timestamp;
+}
+
+/** Expected: forecast / projection. */
+export interface ForecastFeedback {
+  tier: "expected";
+  type: "forecast";
+  agentId: AgentId;
+  metric: string;
+  projectedValue: number;
+  projectedAt: Timestamp;
+  confidence: number;
+  message: string;
+  timestamp: Timestamp;
+}
+
+/** Optional: quality signal. */
+export interface QualityFeedback {
+  tier: "optional";
+  type: "quality";
+  agentId: AgentId;
+  signal: QualitySignal;
+  timestamp: Timestamp;
+}
+
+/** Optional: competing context. */
+export interface CompetingContextFeedback {
+  tier: "optional";
+  type: "competing_context";
+  agentId: AgentId;
+  context: CompetingContext;
+  timestamp: Timestamp;
+}
+
+/** Union of all feedback signal types. */
+export type FeedbackSignal =
+  | HeartbeatFeedback
+  | CostFeedback
+  | ErrorFeedback
+  | DependencyFeedback
+  | MetricFeedback
+  | InsightFeedback
+  | CapacityFeedback
+  | ForecastFeedback
+  | QualityFeedback
+  | CompetingContextFeedback;

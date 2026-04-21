@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+
+.DS_Store
+.claude/
+
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+*.tar.gz
