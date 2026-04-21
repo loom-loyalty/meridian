@@ -98,7 +98,15 @@ pnpm test
 
 The project pins `pnpm@9.15.0` via the `packageManager` field. Node 20+ is required, and `corepack` handles the pnpm install automatically on any reasonably recent corepack version.
 
-If `pnpm install` fails with a corepack signature error (`Cannot find matching keyid`), your Node's bundled corepack is too old to verify the current pnpm release's signing key. Update corepack with `npm install -g corepack@latest` and retry. This is a local environment issue, not a project configuration one — CI runs fine.
+If `pnpm install` fails with a corepack signature error (`Cannot find matching keyid`), your Node's bundled corepack is trying to fetch the latest pnpm release's signing key and failing to verify it. The project already pins `pnpm@9.15.0` via the `packageManager` field, so the fix is to tell corepack not to look beyond the pinned version:
+
+```bash
+COREPACK_DEFAULT_TO_LATEST=0 pnpm install
+```
+
+You can export that env var in your shell rc. Alternative fix is `npm install -g corepack@latest` (requires sudo), which refreshes corepack's built-in keyring.
+
+This is a local environment issue, not a project configuration one — CI runs fine.
 
 ### Contributing
 
