@@ -91,7 +91,24 @@ cd meridian
 pnpm install
 pnpm build
 pnpm typecheck
+pnpm test
 ```
+
+### Setup notes
+
+The project pins `pnpm@9.15.0` via the `packageManager` field. Node 20+ is required, and `corepack` handles the pnpm install automatically on any reasonably recent corepack version.
+
+If `pnpm install` fails with a corepack signature error (`Cannot find matching keyid`), your Node's bundled corepack is too old to verify the current pnpm release's signing key. Update corepack with `npm install -g corepack@latest` and retry. This is a local environment issue, not a project configuration one — CI runs fine.
+
+### Contributing
+
+Package changes need a changeset:
+
+```bash
+pnpm changeset
+```
+
+See [`.changeset/README.md`](.changeset/README.md) for the release workflow. Spec-only changes (files under `specs/`) do not require a changeset.
 
 ## Packages
 

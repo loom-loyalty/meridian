@@ -19,9 +19,13 @@
     "typecheck": "turbo typecheck",
     "clean": "turbo clean",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.27.0",
     "prettier": "^3.4.0",
     "turbo": "^2.4.0",
     "typescript": "^5.7.0"

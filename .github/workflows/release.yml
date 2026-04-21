@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    name: Changesets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.repository == 'loom-loyalty/meridian'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Create Release Pull Request / Tag
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          # When there are pending changesets, opens/updates the
+          # "Version Packages" PR that applies bumps and regenerates
+          # each package's CHANGELOG.md. When none remain and packages
+          # have been versioned, the publish command runs.
+          version: pnpm changeset version
+          # `changeset tag` creates git tags + GitHub Releases from the
+          # versioned packages without publishing to npm. Swap to
+          # `pnpm changeset publish` once NPM_TOKEN is set in secrets.
+          publish: pnpm changeset tag
+          commit: "chore(release): version packages"
+          title: "chore(release): version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # NPM_TOKEN: ${{ secrets.NPM_TOKEN }}  # enable once secret is set
