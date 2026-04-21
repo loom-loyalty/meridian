@@ -1,6 +1,6 @@
 {
   "name": "@loom-loyalty/meridian-conformance",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Meridian conformance test suite. Response-shape validation helpers for runtimes and component implementations.",
   "license": "Apache-2.0",
   "type": "module",

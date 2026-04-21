@@ -1,5 +1,12 @@
 # @loom-loyalty/meridian-priority-reference
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [0784199]
+  - @loom-loyalty/meridian-types@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
