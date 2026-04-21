@@ -38,6 +38,7 @@ Heartbeat interval is configurable but defaults to 30 seconds. A component that 
 Cost signals must be continuous, not batch. The system must be able to answer "what does this agent cost right now?" at any moment. Acceptable latency between cost incurrence and cost signal emission: under 1 second for per-agent queries.
 
 **Errors and failures.** Structured error reporting. Every error carries:
+
 - Severity: `critical`, `high`, `medium`, `low`
 - Category: free-form string (e.g., `infrastructure`, `logic`, `dependency`, `timeout`, `resource`)
 - Frequency: `first`, `recurring`, `escalating`
@@ -75,10 +76,10 @@ All feedback signals share a common envelope:
 ```typescript
 interface FeedbackEnvelope {
   tier: "required" | "expected" | "optional";
-  type: string;          // discriminator for signal type
-  agentId: AgentId;      // who emitted this
-  domain: DomainId;      // which domain context
-  timestamp: Timestamp;  // when this was emitted
+  type: string; // discriminator for signal type
+  agentId: AgentId; // who emitted this
+  domain: DomainId; // which domain context
+  timestamp: Timestamp; // when this was emitted
   workItemId?: WorkItemId; // correlation to specific work, if applicable
 }
 ```
@@ -108,4 +109,4 @@ This specification follows semantic versioning. The feedback signal types are ve
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

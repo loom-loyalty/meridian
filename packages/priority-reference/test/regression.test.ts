@@ -3,12 +3,18 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { Domain, WorkItem, WorkItemId } from "@loom-loyalty/meridian-types";
+import type {
+  Domain,
+  WorkItem,
+  WorkItemId,
+} from "@loom-loyalty/meridian-types";
 import { WSJFPriorityEngine } from "../src/engine.js";
 
 const DAY_MS = 86_400_000;
 
-function makeWorkItem(overrides: Partial<WorkItem> & { id: WorkItemId }): WorkItem {
+function makeWorkItem(
+  overrides: Partial<WorkItem> & { id: WorkItemId },
+): WorkItem {
   return {
     type: "story",
     title: "Test",
@@ -35,7 +41,7 @@ function makeDomain(): Domain {
 async function priorityOf(
   now: number,
   wi: WorkItem,
-  superseded: WorkItem | undefined
+  superseded: WorkItem | undefined,
 ): Promise<number | null> {
   const engine = new WSJFPriorityEngine({
     providers: {
@@ -117,7 +123,11 @@ describe("regression auto-annotation multiplier", () => {
     const regressionWi = makeWorkItem({ id: "wi_regress", lineage: "wi_old" });
 
     const now = 5 * DAY_MS;
-    const basePriority = await priorityOf(now, makeWorkItem({ id: "wi_base" }), undefined);
+    const basePriority = await priorityOf(
+      now,
+      makeWorkItem({ id: "wi_base" }),
+      undefined,
+    );
     const regPriority = await priorityOf(now, regressionWi, supersededWi);
 
     expect(regPriority).toBeCloseTo(basePriority!);

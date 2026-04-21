@@ -3,7 +3,10 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { ErrorFeedback, CircuitBreakerConfig } from "@loom-loyalty/meridian-types";
+import type {
+  ErrorFeedback,
+  CircuitBreakerConfig,
+} from "@loom-loyalty/meridian-types";
 import {
   DEFAULT_CIRCUIT_BREAKER_CONFIG,
   shouldTripCircuitBreaker,
@@ -31,19 +34,27 @@ describe("shouldTripCircuitBreaker (default config)", () => {
   });
 
   it("does not trip on medium severity", () => {
-    expect(shouldTripCircuitBreaker(makeError({ severity: "medium" }))).toBe(false);
+    expect(shouldTripCircuitBreaker(makeError({ severity: "medium" }))).toBe(
+      false,
+    );
   });
 
   it("does not trip when recovered is true", () => {
-    expect(shouldTripCircuitBreaker(makeError({ recovered: true }))).toBe(false);
+    expect(shouldTripCircuitBreaker(makeError({ recovered: true }))).toBe(
+      false,
+    );
   });
 
   it("does not trip on user-level blast radius", () => {
-    expect(shouldTripCircuitBreaker(makeError({ blastRadius: "user" }))).toBe(false);
+    expect(shouldTripCircuitBreaker(makeError({ blastRadius: "user" }))).toBe(
+      false,
+    );
   });
 
   it("does not trip on internal blast radius", () => {
-    expect(shouldTripCircuitBreaker(makeError({ blastRadius: "internal" }))).toBe(false);
+    expect(
+      shouldTripCircuitBreaker(makeError({ blastRadius: "internal" })),
+    ).toBe(false);
   });
 });
 
@@ -53,8 +64,12 @@ describe("shouldTripCircuitBreaker (custom config)", () => {
       ...DEFAULT_CIRCUIT_BREAKER_CONFIG,
       criticalSeverityThreshold: "high",
     };
-    expect(shouldTripCircuitBreaker(makeError({ severity: "high" }), config)).toBe(true);
-    expect(shouldTripCircuitBreaker(makeError({ severity: "medium" }), config)).toBe(false);
+    expect(
+      shouldTripCircuitBreaker(makeError({ severity: "high" }), config),
+    ).toBe(true);
+    expect(
+      shouldTripCircuitBreaker(makeError({ severity: "medium" }), config),
+    ).toBe(false);
   });
 
   it("widened blastRadius catches customer-level", () => {
@@ -62,7 +77,9 @@ describe("shouldTripCircuitBreaker (custom config)", () => {
       ...DEFAULT_CIRCUIT_BREAKER_CONFIG,
       bypassBlastRadius: ["customer", "all_customers"],
     };
-    expect(shouldTripCircuitBreaker(makeError({ blastRadius: "customer" }), config)).toBe(true);
+    expect(
+      shouldTripCircuitBreaker(makeError({ blastRadius: "customer" }), config),
+    ).toBe(true);
   });
 
   it("requireRecoveredFalse=false allows recovered errors to trip", () => {
@@ -70,6 +87,8 @@ describe("shouldTripCircuitBreaker (custom config)", () => {
       ...DEFAULT_CIRCUIT_BREAKER_CONFIG,
       requireRecoveredFalse: false,
     };
-    expect(shouldTripCircuitBreaker(makeError({ recovered: true }), config)).toBe(true);
+    expect(
+      shouldTripCircuitBreaker(makeError({ recovered: true }), config),
+    ).toBe(true);
   });
 });

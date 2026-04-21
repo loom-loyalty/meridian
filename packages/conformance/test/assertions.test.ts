@@ -37,7 +37,9 @@ function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
   };
 }
 
-function makeItem(overrides: Partial<PrioritizedWorkItem> = {}): PrioritizedWorkItem {
+function makeItem(
+  overrides: Partial<PrioritizedWorkItem> = {},
+): PrioritizedWorkItem {
   return {
     workItem: makeWorkItem(),
     priorityScore: 7.5,
@@ -46,7 +48,9 @@ function makeItem(overrides: Partial<PrioritizedWorkItem> = {}): PrioritizedWork
   };
 }
 
-function makeResponse(overrides: Partial<AgentPriorityResponse> = {}): AgentPriorityResponse {
+function makeResponse(
+  overrides: Partial<AgentPriorityResponse> = {},
+): AgentPriorityResponse {
   return {
     items: [makeItem()],
     queriedAt: 2_000_000,
@@ -85,7 +89,7 @@ describe("assertConformantResponse — valid shapes", () => {
           }),
         ],
         pendingReviewReasons: [ctx],
-      })
+      }),
     );
     expect(result.passed).toBe(true);
   });
@@ -100,7 +104,7 @@ describe("assertConformantResponse — valid shapes", () => {
             priorityAnnotation: "circuit_breaker",
           }),
         ],
-      })
+      }),
     );
     expect(result.passed).toBe(true);
   });
@@ -108,7 +112,9 @@ describe("assertConformantResponse — valid shapes", () => {
   it("passes a response with a domainBudgetStatus string", () => {
     const result = assertConformantResponse(
       query,
-      makeResponse({ domainBudgetStatus: "infrastructure at 87% of monthly cap" })
+      makeResponse({
+        domainBudgetStatus: "infrastructure at 87% of monthly cap",
+      }),
     );
     expect(result.passed).toBe(true);
   });
@@ -122,17 +128,22 @@ describe("assertConformantResponse — structural violations", () => {
       queriedAt: 1,
     } as unknown as AgentPriorityResponse);
     expect(result.passed).toBe(false);
-    expect(result.violations.some((v) => v.includes("items MUST be an array"))).toBe(true);
+    expect(
+      result.violations.some((v) => v.includes("items MUST be an array")),
+    ).toBe(true);
   });
 
   it("fails when items.length exceeds query.limit", () => {
     const tooMany = Array.from({ length: 10 }, (_, i) =>
-      makeItem({ workItem: makeWorkItem({ id: `wi_${i}` }) })
+      makeItem({ workItem: makeWorkItem({ id: `wi_${i}` }) }),
     );
-    const result = assertConformantResponse(query, makeResponse({ items: tooMany }));
+    const result = assertConformantResponse(
+      query,
+      makeResponse({ items: tooMany }),
+    );
     expect(result.passed).toBe(false);
     expect(
-      result.violations.some((v) => v.includes("exceeds query.limit"))
+      result.violations.some((v) => v.includes("exceeds query.limit")),
     ).toBe(true);
   });
 
@@ -150,8 +161,13 @@ describe("assertConformantResponse — item-level violations", () => {
     const result = assertConformantResponse(
       query,
       makeResponse({
-        items: [{ priorityScore: 1, explanation: "x" } as unknown as PrioritizedWorkItem],
-      })
+        items: [
+          {
+            priorityScore: 1,
+            explanation: "x",
+          } as unknown as PrioritizedWorkItem,
+        ],
+      }),
     );
     expect(result.passed).toBe(false);
     expect(result.violations.some((v) => v.includes("workItem"))).toBe(true);
@@ -164,11 +180,13 @@ describe("assertConformantResponse — item-level violations", () => {
         items: [
           makeItem({ priorityScore: "high" as unknown as number | null }),
         ],
-      })
+      }),
     );
     expect(result.passed).toBe(false);
     expect(
-      result.violations.some((v) => v.includes("priorityScore MUST be number | null"))
+      result.violations.some((v) =>
+        v.includes("priorityScore MUST be number | null"),
+      ),
     ).toBe(true);
   });
 
@@ -177,12 +195,12 @@ describe("assertConformantResponse — item-level violations", () => {
       query,
       makeResponse({
         items: [makeItem({ explanation: 42 as unknown as string })],
-      })
+      }),
     );
     expect(result.passed).toBe(false);
-    expect(result.violations.some((v) => v.includes("explanation MUST be a string"))).toBe(
-      true
-    );
+    expect(
+      result.violations.some((v) => v.includes("explanation MUST be a string")),
+    ).toBe(true);
   });
 
   it("fails on unknown priorityAnnotation value", () => {
@@ -191,14 +209,15 @@ describe("assertConformantResponse — item-level violations", () => {
       makeResponse({
         items: [
           makeItem({
-            priorityAnnotation: "bogus" as PrioritizedWorkItem["priorityAnnotation"],
+            priorityAnnotation:
+              "bogus" as PrioritizedWorkItem["priorityAnnotation"],
           }),
         ],
-      })
+      }),
     );
     expect(result.passed).toBe(false);
     expect(
-      result.violations.some((v) => v.includes("priorityAnnotation"))
+      result.violations.some((v) => v.includes("priorityAnnotation")),
     ).toBe(true);
   });
 
@@ -207,11 +226,13 @@ describe("assertConformantResponse — item-level violations", () => {
       query,
       makeResponse({
         items: [makeItem({ priorityScore: null })],
-      })
+      }),
     );
     expect(result.passed).toBe(false);
     expect(
-      result.violations.some((v) => v.includes("null scores MUST be annotated"))
+      result.violations.some((v) =>
+        v.includes("null scores MUST be annotated"),
+      ),
     ).toBe(true);
   });
 });
@@ -228,11 +249,13 @@ describe("assertConformantResponse — escalation/pending-review correlation", (
           }),
         ],
         // pendingReviewReasons intentionally missing
-      })
+      }),
     );
     expect(result.passed).toBe(false);
     expect(
-      result.violations.some((v) => v.includes("pendingReviewReasons MUST be populated"))
+      result.violations.some((v) =>
+        v.includes("pendingReviewReasons MUST be populated"),
+      ),
     ).toBe(true);
   });
 
@@ -247,11 +270,13 @@ describe("assertConformantResponse — escalation/pending-review correlation", (
           }),
         ],
         pendingReviewReasons: "nope" as unknown as CompetingContext[],
-      })
+      }),
     );
     expect(result.passed).toBe(false);
     expect(
-      result.violations.some((v) => v.includes("pendingReviewReasons MUST be an array"))
+      result.violations.some((v) =>
+        v.includes("pendingReviewReasons MUST be an array"),
+      ),
     ).toBe(true);
   });
 });

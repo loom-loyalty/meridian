@@ -33,9 +33,10 @@ export function decode(data: Uint8Array): Frame {
   const unpacked = unpackr.unpack(data) as { h: FrameHeader; p: Uint8Array };
   return {
     header: unpacked.h,
-    payload: unpacked.p instanceof Uint8Array
-      ? unpacked.p
-      : new Uint8Array(unpacked.p),
+    payload:
+      unpacked.p instanceof Uint8Array
+        ? unpacked.p
+        : new Uint8Array(unpacked.p),
   };
 }
 
@@ -68,7 +69,7 @@ export function estimateTokenSavings(frame: Frame): {
 } {
   const msgpackBytes = encode(frame).byteLength;
   const jsonBytes = new TextEncoder().encode(
-    JSON.stringify({ h: frame.header, p: Array.from(frame.payload) })
+    JSON.stringify({ h: frame.header, p: Array.from(frame.payload) }),
   ).byteLength;
   return {
     msgpackBytes,

@@ -82,6 +82,7 @@ For conflicts above a configurable severity threshold, the system escalates to a
 Multiple agents noticing the same issue should not create multiple work items. The system correlates related feedback signals and creates one work item with all contributing evidence attached.
 
 Correlation uses:
+
 - Temporal proximity (signals within a configurable window)
 - Source overlap (signals about the same component or work item)
 - Content similarity (signals with matching categories and similar messages)
@@ -143,4 +144,4 @@ Feedback arrives
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

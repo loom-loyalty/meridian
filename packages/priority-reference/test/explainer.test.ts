@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { CompetingContext, Domain, WorkItem } from "@loom-loyalty/meridian-types";
+import type {
+  CompetingContext,
+  Domain,
+  WorkItem,
+} from "@loom-loyalty/meridian-types";
 import { explain } from "../src/explainer.js";
 
 function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
@@ -23,7 +27,9 @@ function makeWorkItem(overrides: Partial<WorkItem> = {}): WorkItem {
   };
 }
 
-function makeContext(overrides: Partial<CompetingContext> = {}): CompetingContext {
+function makeContext(
+  overrides: Partial<CompetingContext> = {},
+): CompetingContext {
   return {
     sourceAgentId: "ux-agent",
     contestedWorkItemId: "wi_test",

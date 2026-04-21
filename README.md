@@ -120,21 +120,21 @@ See [`.changeset/README.md`](.changeset/README.md) for the release workflow. Spe
 
 ## Packages
 
-| Package | Description | Status |
-|---|---|---|
+| Package                        | Description                           | Status      |
+| ------------------------------ | ------------------------------------- | ----------- |
 | `@loom-loyalty/meridian-types` | Shared TypeScript types from the spec | In progress |
-| `@loom-loyalty/meridian-wire` | MessagePack/WebSocket wire protocol | In progress |
+| `@loom-loyalty/meridian-wire`  | MessagePack/WebSocket wire protocol   | In progress |
 
 ## Roadmap
 
 These packages are named across the specs and will be published as they land. They do not exist in this tree today.
 
-| Package | Description | Target |
-|---|---|---|
+| Package                                     | Description                                      | Target       |
+| ------------------------------------------- | ------------------------------------------------ | ------------ |
 | `@loom-loyalty/meridian-priority-reference` | Reference priority engine (WSJF-derived formula) | v1.0-draft.5 |
-| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects adapter | v1.0 |
-| `@loom-loyalty/meridian-conformance` | Runtime conformance test suite | v1.0 |
-| `@loom-loyalty/meridian-proxy` | Credential brokering integration proxy | v1.0 |
+| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects adapter     | v1.0         |
+| `@loom-loyalty/meridian-conformance`        | Runtime conformance test suite                   | v1.0         |
+| `@loom-loyalty/meridian-proxy`              | Credential brokering integration proxy           | v1.0         |
 
 ## Related projects
 

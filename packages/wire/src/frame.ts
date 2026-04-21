@@ -29,7 +29,7 @@ export interface FrameOptions {
 export function buildFrame(
   type: MessageType,
   opts: FrameOptions,
-  payload: unknown
+  payload: unknown,
 ): Frame {
   const header: FrameHeader = {
     v: 1,
@@ -51,17 +51,14 @@ export function buildFrame(
 }
 
 /** Build a direct send frame. */
-export function sendFrame(
-  opts: FrameOptions,
-  payload: unknown
-): Frame {
+export function sendFrame(opts: FrameOptions, payload: unknown): Frame {
   return buildFrame(0x01, opts, payload); // MessageType.SEND
 }
 
 /** Build a feedback frame. */
 export function feedbackFrame(
   opts: Omit<FrameOptions, "to">,
-  payload: unknown
+  payload: unknown,
 ): Frame {
   return buildFrame(0x10, { ...opts, to: "__system__" }, payload); // MessageType.FEEDBACK
 }
@@ -70,7 +67,11 @@ export function feedbackFrame(
 export function replyFrame(
   originalMessageId: string,
   opts: FrameOptions,
-  payload: unknown
+  payload: unknown,
 ): Frame {
-  return buildFrame(0x03, { ...opts, correlationId: originalMessageId }, payload); // MessageType.REPLY
+  return buildFrame(
+    0x03,
+    { ...opts, correlationId: originalMessageId },
+    payload,
+  ); // MessageType.REPLY
 }

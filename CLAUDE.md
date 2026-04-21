@@ -30,15 +30,19 @@ pnpm format:check     # check formatting without writing
 ## Architecture decisions
 
 ### Wire protocol
+
 Agent-to-agent communication uses MessagePack frames over WebSocket. The `wire` package handles encoding/decoding. Frame headers use short keys (`v`, `t`, `id`, `from`, `to`, `domain`, `cor`, `wi`, `ts`, `ttl`, `pri`) to minimize wire size. At LLM injection boundaries, payloads decode to minified JSON via `payloadToJSON()`.
 
 ### Types package is the contract
+
 The `types` package is the single source of truth. It mirrors the spec documents. If the spec says something, there's a corresponding type. If there's no type, the spec doesn't say it. Changes to types require corresponding spec updates and vice versa.
 
 ### Runtime spec primitives
+
 The spec defines six primitives that any platform must implement: agent lifecycle (spawn/suspend/resume/terminate), state persistence (key-value with atomic updates), scheduling (one-shot and cron), message transport (send/broadcast/onMessage), resource limits (CPU/memory/tokens/cost enforcement), and observability (logs/metrics/traces).
 
 ### Experimental features
+
 Types marked `@experimental` may change in minor versions. Currently experimental: `PermissionScope`, `InvocationContext`, `SnapshotId`, `RuntimeRequirements`, `QualitySignal`, `EnforcementTier`, `CompetingContext`. Stable types are frozen for the v1.x line.
 
 ## Coding conventions

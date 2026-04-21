@@ -19,7 +19,7 @@ export interface ConformanceResult {
 
 export function assertConformantResponse(
   query: AgentPriorityQuery,
-  response: AgentPriorityResponse
+  response: AgentPriorityResponse,
 ): ConformanceResult {
   const violations: string[] = [];
 
@@ -31,7 +31,7 @@ export function assertConformantResponse(
   const limit = Math.min(query.limit ?? 1, 10);
   if (response.items.length > limit) {
     violations.push(
-      `response.items.length (${response.items.length}) exceeds query.limit (${limit})`
+      `response.items.length (${response.items.length}) exceeds query.limit (${limit})`,
     );
   }
 
@@ -44,22 +44,29 @@ export function assertConformantResponse(
   }
 
   const hasEscalated = response.items.some(
-    (i) => i.priorityScore === null && i.priorityAnnotation === "escalated"
+    (i) => i.priorityScore === null && i.priorityAnnotation === "escalated",
   );
   if (hasEscalated && response.pendingReviewReasons === undefined) {
     violations.push(
-      "response.pendingReviewReasons MUST be populated when any item priorityScore is null with priorityAnnotation='escalated'"
+      "response.pendingReviewReasons MUST be populated when any item priorityScore is null with priorityAnnotation='escalated'",
     );
   }
 
   if (response.pendingReviewReasons !== undefined) {
     if (!Array.isArray(response.pendingReviewReasons)) {
-      violations.push("response.pendingReviewReasons MUST be an array when present");
+      violations.push(
+        "response.pendingReviewReasons MUST be an array when present",
+      );
     }
   }
 
-  if (response.domainBudgetStatus !== undefined && typeof response.domainBudgetStatus !== "string") {
-    violations.push("response.domainBudgetStatus MUST be a string when present");
+  if (
+    response.domainBudgetStatus !== undefined &&
+    typeof response.domainBudgetStatus !== "string"
+  ) {
+    violations.push(
+      "response.domainBudgetStatus MUST be a string when present",
+    );
   }
 
   return { passed: violations.length === 0, violations };
@@ -88,13 +95,13 @@ function validateItem(item: PrioritizedWorkItem, index: number): string[] {
     item.priorityAnnotation !== "circuit_breaker"
   ) {
     v.push(
-      `${p}.priorityAnnotation, when present, MUST be 'regression' | 'escalated' | 'circuit_breaker'`
+      `${p}.priorityAnnotation, when present, MUST be 'regression' | 'escalated' | 'circuit_breaker'`,
     );
   }
 
   if (item.priorityScore === null && item.priorityAnnotation === undefined) {
     v.push(
-      `${p}.priorityScore is null but priorityAnnotation is absent; null scores MUST be annotated`
+      `${p}.priorityScore is null but priorityAnnotation is absent; null scores MUST be annotated`,
     );
   }
 

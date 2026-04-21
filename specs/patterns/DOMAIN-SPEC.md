@@ -82,4 +82,4 @@ Implementations may formalize maturity levels and track progression as a metric.
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

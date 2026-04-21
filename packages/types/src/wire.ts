@@ -39,7 +39,7 @@ export const MessageType = {
    */
   PRIORITY_RESPONSE: 0x41,
   /** System control (ping, pong, auth). */
-  SYSTEM: 0xFF,
+  SYSTEM: 0xff,
 } as const;
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];

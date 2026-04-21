@@ -53,7 +53,9 @@ function makeDomain(overrides: Partial<Domain> = {}): Domain {
   };
 }
 
-function makeWorkItem(overrides: Partial<WorkItem> & { id: WorkItemId }): WorkItem {
+function makeWorkItem(
+  overrides: Partial<WorkItem> & { id: WorkItemId },
+): WorkItem {
   return {
     type: "story",
     title: "Test",
@@ -112,7 +114,9 @@ describe("WSJFPriorityEngine happy path", () => {
     const resp = await engine.query(query);
     expect(resp.items[0].workItem.id).toBe("wi_a");
     expect(resp.items[1].workItem.id).toBe("wi_b");
-    expect(resp.items[0].priorityScore).toBeGreaterThan(resp.items[1].priorityScore!);
+    expect(resp.items[0].priorityScore).toBeGreaterThan(
+      resp.items[1].priorityScore!,
+    );
   });
 
   it("deterministic tie-break by createdAt asc then id asc", async () => {
@@ -124,7 +128,11 @@ describe("WSJFPriorityEngine happy path", () => {
       now: () => 200,
     });
     const resp = await engine.query(query);
-    expect(resp.items.map((i) => i.workItem.id)).toEqual(["wi_c", "wi_a", "wi_b"]);
+    expect(resp.items.map((i) => i.workItem.id)).toEqual([
+      "wi_c",
+      "wi_a",
+      "wi_b",
+    ]);
   });
 });
 
@@ -272,7 +280,7 @@ describe("WSJFPriorityEngine degenerate inputs", () => {
     });
 
     await expect(
-      engine.query({ agentId: "a", domain: "infrastructure", limit: 99 })
+      engine.query({ agentId: "a", domain: "infrastructure", limit: 99 }),
     ).rejects.toThrow(RuntimeError);
   });
 

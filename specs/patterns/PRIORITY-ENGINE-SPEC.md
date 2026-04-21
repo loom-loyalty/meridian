@@ -43,14 +43,14 @@ All data contracts are in `@loom-loyalty/meridian-types/work-item`. This section
 ```typescript
 interface WeightProfile {
   id: string;
-  costOfNotBuildingWeight?: number;      // default 1.0
-  timeCriticalityWeight?: number;         // default 1.0
-  impactWeight?: number;                  // default 1.0
-  confidenceMultiplier?: number;          // default 1.0
-  usdPerAffectedConsumer?: number;        // default 1.0
-  usdPerDayWeight?: number;               // default 1.0
-  regressionMultiplierCap?: number;       // default 2.0
-  timeCriticalityCap?: number;            // default 2.0
+  costOfNotBuildingWeight?: number; // default 1.0
+  timeCriticalityWeight?: number; // default 1.0
+  impactWeight?: number; // default 1.0
+  confidenceMultiplier?: number; // default 1.0
+  usdPerAffectedConsumer?: number; // default 1.0
+  usdPerDayWeight?: number; // default 1.0
+  regressionMultiplierCap?: number; // default 2.0
+  timeCriticalityCap?: number; // default 2.0
 }
 ```
 
@@ -60,13 +60,13 @@ Implementations MAY ignore any or all numeric fields and compute priorities howe
 
 ```typescript
 interface DomainPriorityConfig {
-  weightProfileId?: string;               // falls back to "default"
+  weightProfileId?: string; // falls back to "default"
   circuitBreakerConfig?: CircuitBreakerConfig;
 }
 
 interface CircuitBreakerConfig {
   criticalSeverityThreshold: "critical" | "high";
-  bypassBlastRadius: ErrorFeedback["blastRadius"][];  // note: different enum from CompetingContext.blastRadius
+  bypassBlastRadius: ErrorFeedback["blastRadius"][]; // note: different enum from CompetingContext.blastRadius
   requireRecoveredFalse: boolean;
   escalationPath: "steward" | "runtime_log_only";
 }
@@ -153,9 +153,9 @@ No runtime primitive is added by this spec. Priority engines are ordinary agents
 
 The priority engine uses two message types from [`../core/WIRE-PROTOCOL-SPEC.md`](../core/WIRE-PROTOCOL-SPEC.md) §5.3:
 
-| Value | Name | Description |
-|---|---|---|
-| `0x40` | `PRIORITY_QUERY` | Agent → engine query |
+| Value  | Name                | Description             |
+| ------ | ------------------- | ----------------------- |
+| `0x40` | `PRIORITY_QUERY`    | Agent → engine query    |
 | `0x41` | `PRIORITY_RESPONSE` | Engine → agent response |
 
 Payloads are MessagePack-encoded `AgentPriorityQuery` and `AgentPriorityResponse` respectively, defined in `@loom-loyalty/meridian-types/work-item`. The response MUST set the frame header's `cor` field to the originating query's `id` for correlation.
@@ -243,12 +243,12 @@ None of these numbers are sacred. An implementation that decides `critical` dese
 ### 8.3 Regression sensitivity
 
 | Days since closed | Multiplier (default `regressionMultiplierCap` = 2.0) |
-|---|---|
-| 1 | 2.00 |
-| 2 | 1.50 |
-| 5 | 1.20 |
-| 10 | 1.10 |
-| 30 | 1.03 |
+| ----------------- | ---------------------------------------------------- |
+| 1                 | 2.00                                                 |
+| 2                 | 1.50                                                 |
+| 5                 | 1.20                                                 |
+| 10                | 1.10                                                 |
+| 30                | 1.03                                                 |
 
 Regression boost only applies when the new item's `lineage.supersedes` points to a closed item within the domain's cooldown window (see [`FEEDBACK-PROCESSING-SPEC.md`](FEEDBACK-PROCESSING-SPEC.md) §3.4).
 
@@ -302,4 +302,4 @@ This spec follows semantic versioning. The normative data shapes (§2) and escal
 
 ---
 
-*Draft document. Comments welcome via pull request.*
+_Draft document. Comments welcome via pull request._

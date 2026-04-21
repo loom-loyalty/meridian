@@ -78,7 +78,8 @@ export const referenceScenarios: ConformanceScenario[] = [
   },
   {
     name: "empty-result",
-    description: "Query against an empty work queue returns an empty items array.",
+    description:
+      "Query against an empty work queue returns an empty items array.",
     world: {
       workItems: [],
       domain,

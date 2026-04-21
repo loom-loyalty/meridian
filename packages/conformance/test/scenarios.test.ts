@@ -17,12 +17,14 @@ describe("referenceScenarios — well-formed fixtures", () => {
         "escalation-response",
         "not-found-domain",
         "invalid-argument",
-      ])
+      ]),
     );
   });
 
   it("includes a circuit-breaker scenario", () => {
-    expect(referenceScenarios.some((s) => s.name === "circuit-breaker")).toBe(true);
+    expect(referenceScenarios.some((s) => s.name === "circuit-breaker")).toBe(
+      true,
+    );
   });
 
   it("every scenario has a non-empty name and description", () => {
@@ -69,13 +71,15 @@ describe("referenceScenarios — well-formed fixtures", () => {
   });
 
   it("escalation scenario attaches a CompetingContext with service+ blast radius", () => {
-    const escalation = referenceScenarios.find((s) => s.name === "escalation-response");
+    const escalation = referenceScenarios.find(
+      (s) => s.name === "escalation-response",
+    );
     expect(escalation).toBeDefined();
     const id = escalation!.world.workItems[0].id;
     const contexts = escalation!.world.contexts?.[id];
     expect(contexts).toBeDefined();
     const highBlast = contexts!.some((c) =>
-      ["service", "domain", "system"].includes(c.impact.blastRadius)
+      ["service", "domain", "system"].includes(c.impact.blastRadius),
     );
     expect(highBlast).toBe(true);
   });
