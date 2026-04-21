@@ -148,4 +148,52 @@ describe("explain()", () => {
     });
     expect(out).not.toContain("of monthly cap");
   });
+
+  it("prefers domain.budget.lastUpdatedAt over ctx.domainBudgetReadAt", () => {
+    const now = 1_000_000;
+    const domain: Domain = {
+      id: "infrastructure",
+      name: "Infra",
+      stewards: [{ id: "s1", name: "Steward", role: "primary" }],
+      budget: {
+        monthlyLimitUsd: 10_000,
+        currentSpendUsd: 9_500,
+        alertThreshold: 0.8,
+        // Set on the budget object: reads 8min stale.
+        lastUpdatedAt: now - 8 * 60_000,
+      },
+    };
+    const out = explain({
+      rank: 1,
+      workItem: makeWorkItem(),
+      domain,
+      // Intentionally stale-er ctx override — the field takes precedence.
+      domainBudgetReadAt: now - 99 * 60_000,
+      now,
+    });
+    expect(out).toContain("budget reading 8min stale");
+    expect(out).not.toContain("99min stale");
+  });
+
+  it("falls back to ctx.domainBudgetReadAt when budget.lastUpdatedAt is absent", () => {
+    const now = 1_000_000;
+    const domain: Domain = {
+      id: "infrastructure",
+      name: "Infra",
+      stewards: [{ id: "s1", name: "Steward", role: "primary" }],
+      budget: {
+        monthlyLimitUsd: 10_000,
+        currentSpendUsd: 9_500,
+        alertThreshold: 0.8,
+      },
+    };
+    const out = explain({
+      rank: 1,
+      workItem: makeWorkItem(),
+      domain,
+      domainBudgetReadAt: now - 5 * 60_000,
+      now,
+    });
+    expect(out).toContain("budget reading 5min stale");
+  });
 });

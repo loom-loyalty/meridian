@@ -17,6 +17,7 @@ function makeError(overrides: Partial<ErrorFeedback> = {}): ErrorFeedback {
     tier: "required",
     type: "error",
     agentId: "a1",
+    domain: "infrastructure",
     severity: "critical",
     category: "infrastructure",
     message: "db down",

@@ -3,13 +3,7 @@
  * Defines the structured signals every Meridian component emits.
  */
 
-import type {
-  AgentId,
-  DomainId,
-  WorkItemId,
-  Timestamp,
-  Cost,
-} from "./primitives.js";
+import type { AgentId, DomainId, Timestamp, Cost } from "./primitives.js";
 import type { QualitySignal, CompetingContext } from "./quality.js";
 
 /** Feedback tiers determine what the system requires from each component. */
@@ -39,6 +33,7 @@ export interface CostFeedback {
   tier: "required";
   type: "cost";
   agentId: AgentId;
+  domain: DomainId;
   cost: Cost;
   breakdown?: {
     compute?: number;
@@ -56,6 +51,7 @@ export interface ErrorFeedback {
   tier: "required";
   type: "error";
   agentId: AgentId;
+  domain: DomainId;
   severity: "critical" | "high" | "medium" | "low";
   category: string;
   message: string;
@@ -70,6 +66,7 @@ export interface DependencyFeedback {
   tier: "required";
   type: "dependencies";
   agentId: AgentId;
+  domain: DomainId;
   dependsOn: string[];
   dependedOnBy: string[];
   context?: Record<string, unknown>;
@@ -81,6 +78,7 @@ export interface MetricFeedback {
   tier: "expected";
   type: "metric";
   agentId: AgentId;
+  domain: DomainId;
   name: string;
   value: number;
   baseline?: number;
@@ -88,14 +86,27 @@ export interface MetricFeedback {
   timestamp: Timestamp;
 }
 
-/** Expected: insight with confidence. */
+/**
+ * Expected: insight with confidence.
+ *
+ * The insight text may be supplied as a single `summary` (narrative-style,
+ * matches `MERIDIAN-IN-PRACTICE.md` Ch 1) or as the earlier `message` +
+ * `category` pair. At least one form SHOULD be present; all three are
+ * optional to preserve additive compatibility with prior v1.0-draft
+ * implementations.
+ */
 export interface InsightFeedback {
   tier: "expected";
   type: "insight";
   agentId: AgentId;
+  domain: DomainId;
   confidence: number;
-  message: string;
-  category: string;
+  /** Single-field narrative summary of the insight. Preferred. */
+  summary?: string;
+  /** Legacy: structured message paired with {@link category}. */
+  message?: string;
+  /** Legacy: classification tag paired with {@link message}. */
+  category?: string;
   evidence?: unknown;
   suggestedAction?: string;
   timestamp: Timestamp;
@@ -106,6 +117,7 @@ export interface CapacityFeedback {
   tier: "expected";
   type: "capacity";
   agentId: AgentId;
+  domain: DomainId;
   current: number;
   max: number;
   unit: string;
@@ -117,6 +129,7 @@ export interface ForecastFeedback {
   tier: "expected";
   type: "forecast";
   agentId: AgentId;
+  domain: DomainId;
   metric: string;
   projectedValue: number;
   projectedAt: Timestamp;
@@ -130,6 +143,7 @@ export interface QualityFeedback {
   tier: "optional";
   type: "quality";
   agentId: AgentId;
+  domain: DomainId;
   signal: QualitySignal;
   timestamp: Timestamp;
 }
@@ -139,6 +153,7 @@ export interface CompetingContextFeedback {
   tier: "optional";
   type: "competing_context";
   agentId: AgentId;
+  domain: DomainId;
   context: CompetingContext;
   timestamp: Timestamp;
 }

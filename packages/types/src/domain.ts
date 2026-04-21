@@ -3,7 +3,7 @@
  * Domains are organizational primitives based on accountability.
  */
 
-import type { AgentId, DomainId } from "./primitives.js";
+import type { AgentId, DomainId, Timestamp } from "./primitives.js";
 import type { DomainPriorityConfig } from "./work-item.js";
 
 export interface Domain {
@@ -32,6 +32,13 @@ export interface DomainBudget {
   monthlyLimitUsd: number;
   currentSpendUsd: number;
   alertThreshold: number; // 0.0 to 1.0
+  /**
+   * When `currentSpendUsd` was last refreshed. Optional; when present,
+   * downstream consumers (e.g. the priority engine explainer) can
+   * annotate outputs as stale once the reading exceeds their freshness
+   * threshold. See DOMAIN-SPEC §3.
+   */
+  lastUpdatedAt?: Timestamp;
 }
 
 export interface GateConfig {
