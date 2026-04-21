@@ -104,9 +104,14 @@ If `pnpm install` fails with a corepack signature error (`Cannot find matching k
 COREPACK_DEFAULT_TO_LATEST=0 pnpm install
 ```
 
-You can export that env var in your shell rc. Alternative fix is `npm install -g corepack@latest` (requires sudo), which refreshes corepack's built-in keyring.
+Export that env var in your shell rc (`.zshrc`, `.bashrc`) to make it permanent. This is the reliable fix regardless of Node version.
 
-This is a local environment issue, not a project configuration one — CI runs fine.
+Two alternatives that sometimes work:
+
+1. `npm install -g corepack@latest` (requires sudo) refreshes corepack's built-in keyring. Only viable on Node LTS releases (20, 22, 24+) — the latest corepack rejects non-LTS Node versions (21, 23, 25) with `EBADENGINE`. If you're on an odd-numbered Node, use the env var above or switch to an LTS.
+2. Use Node LTS (20 or 22) instead of the current release. LTS ships a stable corepack that usually works without the env var.
+
+This is a local environment issue, not a project configuration one — CI runs fine on Node 20.
 
 ### Contributing
 
