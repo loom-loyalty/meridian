@@ -59,13 +59,12 @@ Types marked `@experimental` may change in minor versions. Currently experimenta
 - `Frame` / `FrameHeader` — wire protocol message structure
 - `FeedbackSignal` — union of all feedback types (heartbeat, cost, error, metric, insight, etc.)
 - `QualitySignal` — structured quality validation results with enforcement tiers
-- `CompetingContext` — machine-readable counter-evidence for priority engine
+- `CompetingContext` — machine-readable counter-evidence for priority scoring (see `specs/patterns/PRIORITY-ENGINE-SPEC.md`, landing in v1.0-draft.5)
 - `WorkItem` — unit of work with two cost estimates (cost to build, cost of NOT building)
 - `PermissionScope` — what services/methods an agent can access (experimental)
 
 ## What not to do
 
-- Don't add Shuttle-specific concepts to this repo. Shuttle is a separate product built on Meridian.
 - Don't break backward compatibility on stable types within v1.x.
 - Don't use JSON for agent-to-agent communication. MessagePack over WebSocket is the wire format.
 - Don't put credentials in agent environments. Use the integration proxy pattern.

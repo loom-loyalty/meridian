@@ -5,6 +5,10 @@
 **Date:** April 2026
 **License:** CC BY 4.0
 
+> Meridian is the protocol for systems where agents operate, humans steward, and costs are visible in real time. It defines the wire format, runtime primitives, feedback contract, and skill declaration that let mixed agent-and-human organizations run lean — small teams of stewards setting direction and gating decisions, while domain agents handle operational work within visible budgets.
+
+This document defines the Meridian Runtime layer: the six primitives any platform must implement to host Meridian-compatible agents — lifecycle, state persistence, scheduling, message transport, resource limits, and observability.
+
 ---
 
 ## 1. About this document
@@ -164,7 +168,11 @@ type InvocationContext = {
 /**
  * Declares what runtime capabilities an agent requires.
  * Used for placement decisions and marketplace filtering.
- * Informational, not enforced by the spec.
+ *
+ * Non-normative: this type is advisory. Runtimes SHOULD honor requirements
+ * they can satisfy and MAY reject spawn requests they cannot meet, but the
+ * spec does not mandate any specific enforcement behavior beyond returning
+ * `UNAVAILABLE` when a declared requirement is unreachable. See section 7.
  *
  * @experimental
  */
@@ -180,8 +188,9 @@ type RuntimeRequirements = {
 /**
  * Structured quality signal emitted after work is completed.
  * Goes beyond "did it work?" to provide machine-readable
- * validation results that the priority engine and compound
- * learning layer can act on.
+ * validation results that downstream priority-scoring components
+ * (see `../patterns/PRIORITY-ENGINE-SPEC.md`) and compound
+ * learning layers can act on.
  *
  * @experimental
  */
@@ -242,8 +251,11 @@ type EnforcementTier =
  * Structured competing context emitted when a proposed change
  * would affect a component that wants to provide counter-evidence.
  *
- * Competing context is machine-readable so the priority engine
- * can factor it into scoring, not just surface it for humans to read.
+ * Competing context is machine-readable so downstream consumers
+ * (including the priority engine; see
+ * `../patterns/PRIORITY-ENGINE-SPEC.md` for the normative escalation
+ * mechanism) can factor it into decisions rather than only surfacing
+ * it for humans to read.
  *
  * @experimental
  */
@@ -282,19 +294,20 @@ type CompetingContext = {
 
 /**
  * Standard error categories. Implementations must classify all errors
- * into one of these categories for consistent observability.
+ * into one of these categories for consistent observability. Expressed
+ * as a string literal union so values are zero-cost at runtime and
+ * serialize directly to MessagePack / JSON.
  */
-enum ErrorCategory {
-  NOT_FOUND = "not_found",
-  ALREADY_EXISTS = "already_exists",
-  PERMISSION_DENIED = "permission_denied",
-  RESOURCE_EXHAUSTED = "resource_exhausted",
-  INVALID_ARGUMENT = "invalid_argument",
-  TIMEOUT = "timeout",
-  UNAVAILABLE = "unavailable",
-  INTERNAL = "internal",
-  CANCELLED = "cancelled"
-}
+type ErrorCategory =
+  | "not_found"
+  | "already_exists"
+  | "permission_denied"
+  | "resource_exhausted"
+  | "invalid_argument"
+  | "timeout"
+  | "unavailable"
+  | "internal"
+  | "cancelled";
 
 /**
  * Standard runtime error. All primitives throw this on failure.
@@ -935,7 +948,7 @@ In practice, runtimes fall into two classes with fundamentally different capabil
 
 **Sandbox-class runtimes.** Slower cold starts (seconds, mitigated by snapshots). Full memory (GBs). Full filesystem with code repositories. Shell access. Network-level security controls. Best for complex, task-oriented agents that need to read code, run tests, or execute multi-step workflows. Example: Browserbase sandboxes, Anthropic Managed Agents, E2B.
 
-The `RuntimeRequirements` type (experimental) allows agents to declare which runtime class they need. This is informational: adapters use it for placement decisions, and marketplaces use it to filter compatible runtimes when deploying an agent. A Meridian system may run both runtime classes simultaneously, with lightweight observer agents on isolates and heavyweight task agents in sandboxes.
+The `RuntimeRequirements` type (experimental; see section 3) allows agents to declare which runtime class they need. Treatment is non-normative: adapters use it for placement decisions, marketplaces use it to filter compatible runtimes when deploying an agent. A Meridian system may run both runtime classes simultaneously, with lightweight observer agents on isolates and heavyweight task agents in sandboxes. Runtimes SHOULD honor requirements they can satisfy and MAY reject spawn requests they cannot meet by returning `UNAVAILABLE`; the spec does not mandate any specific enforcement behavior beyond that.
 
 ---
 
@@ -952,7 +965,7 @@ This section tracks unresolved questions during the draft period. Each will be r
 - **Q7: Should sandbox-class runtimes declare their capabilities separately from lightweight runtimes?** A Cloudflare isolate and a full Linux VM have fundamentally different capability profiles (filesystem access, shell execution, network control). Agents may need to declare which runtime class they require, and the placement layer needs to match agents to capable runtimes.
 - **Q8: Should `QualitySignal` be promoted from optional to expected feedback?** Harness Engineering's production experience suggests that quality signals with structured check results are essential for compound learning, not just nice-to-have. If the system can't measure quality, it can't improve. Counter-argument: not every agent produces work that has a meaningful quality dimension.
 - **Q9: Should the spec define standard quality check names?** Checks like `no-circular-deps`, `layer-boundary`, `test-coverage`, and `documentation-coverage` recur across codebases. A standard vocabulary would enable cross-project quality dashboards and marketplace quality certifications. Counter-argument: adds spec surface area and may not generalize beyond software engineering.
-- **Q10: Should `CompetingContext` trigger automatic priority recalculation, or just surface information?** If competing context is machine-readable (and it now is), the priority engine could automatically adjust scores based on blast radius and revenue-at-risk. This is powerful but removes human judgment from a potentially high-stakes decision.
+- **Q10: Should `CompetingContext` trigger automatic priority recalculation, or just surface information?** **RESOLVED** (v1.0-draft.5): Yes for the escalation pattern. `CompetingContext` with `impact.blastRadius ∈ {"service", "domain", "system"}` triggers a normative escalation path defined in [`../patterns/PRIORITY-ENGINE-SPEC.md`](../patterns/PRIORITY-ENGINE-SPEC.md). Automatic score adjustment for smaller blast radii is reference-implementation-defined; see [`@loom-loyalty/meridian-priority-reference`](../../packages/priority-reference/). Other implementations may diverge.
 
 Feedback on these questions is welcome via the Meridian RFC process.
 
@@ -962,7 +975,7 @@ Feedback on these questions is welcome via the Meridian RFC process.
 
 - **Adapter** — A platform-specific implementation of this spec. The Cloudflare adapter is the reference implementation.
 - **Agent** — A long-lived addressable computation managed by the runtime. Agents have state, can be scheduled, and exchange messages.
-- **Competing context** — Structured counter-evidence emitted by a component when a proposed change would affect it. Machine-readable so the priority engine can factor it into scoring. Experimental in v1.0.
+- **Competing context** — Structured counter-evidence emitted by a component when a proposed change would affect it. Machine-readable so downstream consumers (including the priority engine; see [`../patterns/PRIORITY-ENGINE-SPEC.md`](../patterns/PRIORITY-ENGINE-SPEC.md)) can factor it into decisions. Experimental in v1.0.
 - **Credential brokering** — A pattern where the runtime holds real API credentials and injects them on behalf of agents, so agents never directly handle secrets. See section 7.
 - **Domain** — An organizational grouping of agents and humans, defined in the Meridian Domain Model spec.
 - **Enforcement tier** — One of three levels of quality validation: mechanical (automated, deterministic), agent review (automated, non-deterministic), or human gate (steward approval). Experimental in v1.0.

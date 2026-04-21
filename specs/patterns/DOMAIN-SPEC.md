@@ -5,6 +5,10 @@
 **Date:** April 2026
 **License:** CC BY 4.0
 
+> Meridian is the protocol for systems where agents operate, humans steward, and costs are visible in real time. It defines the wire format, runtime primitives, feedback contract, and skill declaration that let mixed agent-and-human organizations run lean — small teams of stewards setting direction and gating decisions, while domain agents handle operational work within visible budgets.
+
+This document defines the Meridian domain model: domains as accountability-based organizational primitives, the steward role, visible budgets, quality gates, and cross-domain work. Domain adoption is an operating pattern; see the [`README.md`](README.md) in this directory for the core/patterns boundary.
+
 ---
 
 ## 1. Purpose
@@ -66,7 +70,7 @@ Initiatives and epics can span multiple domains. When they do:
 
 ---
 
-## 7. Domain maturity
+## 7. Domain maturity (non-normative)
 
 Domains evolve in capability over time. Meridian does not prescribe maturity levels but recognizes a natural progression:
 
@@ -74,7 +78,7 @@ Domains evolve in capability over time. Meridian does not prescribe maturity lev
 - Maturing domains add mechanical constraints and reduce human gate scope
 - Advanced domains have full feedback loops, agent-driven work creation, and human gates only on strategic decisions
 
-Implementations may formalize maturity levels and track progression as a metric.
+Implementations may formalize maturity levels and track progression as a metric. This section is non-normative: no Meridian primitive depends on a maturity-level field, and adopters may ignore the framing entirely.
 
 ---
 
