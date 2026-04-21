@@ -80,15 +80,43 @@ interface CostEstimate {
     riskExposure?: number;   // probability × impact (costOfNotBuilding)
     debtAccumulation?: number; // ongoing cost if deferred (costOfNotBuilding)
   };
-  basis?: string;  // human-readable explanation of estimate methodology
+  basis?: string;              // human-readable explanation of methodology
+  providedBy?: DomainId;       // domain accountable for this estimate
+  estimatorAgentId?: AgentId;  // specific agent that produced the estimate
+  estimatedAt?: Timestamp;     // when the estimate was produced
 }
 ```
 
 The `basis` field is important for auditability. "Estimated from similar past stories" or "Calculated from current query cost × projected traffic" gives humans and the compound learning layer context for how reliable the estimate is.
 
+The `providedBy`, `estimatorAgentId`, and `estimatedAt` fields support the detector/estimator handoff (§6) and compound learning:
+
+- `providedBy` — the domain accountable for the estimate. On `costOfNotBuilding` this is typically the detecting domain (the domain that observes the impact of not building). On `costToBuild` this is typically the executing domain (the domain that will bear the work). The two cost estimates on a single work item often carry different `providedBy` values.
+- `estimatorAgentId` — the specific agent or reviewer that produced the estimate. Lets systems weight estimates by the estimator's historical accuracy.
+- `estimatedAt` — lets downstream consumers detect stale estimates and trigger re-estimation when underlying conditions change.
+
+When an estimate is revised during the work item lifecycle, implementations MAY overwrite the existing `CostEstimate` or retain prior estimates via observability logs. The spec does not mandate a revision history on the work item itself.
+
 ---
 
-## 6. Work item lifecycle
+## 6. Cross-domain cost estimation (detector/estimator handoff)
+
+Meridian separates the **detector** (the agent or human that notices a problem) from the **estimator** (the agent or human that knows what the work costs to build). An infrastructure monitoring agent can estimate the cost of NOT fixing a hot query — that's its observation surface. It cannot estimate the engineering cost of the migration; that's engineering-domain information.
+
+The work item lifecycle encodes this handoff:
+
+- **`proposed`** — the detector creates the work item and populates `costOfNotBuilding` (and any domain-local context it has). `costToBuild` is typically unestimated at this stage. When unestimated, set `costToBuild.amountUsd` to `0` and `costToBuild.basis` to a string starting with `"unestimated"` (e.g. `"unestimated — engineering to provide"`), so the reason is auditable. Status is the normative signal, not the basis string: **priority engines MUST exclude work items in `proposed` status from priority queries**, since their `costToBuild` is not yet trustworthy.
+- **`researching`** — the executing domain (engineering, design, security, etc.) takes the work item and estimates `costToBuild` with a substantive `basis` string. The work item may cross multiple domains during this phase if the work is complex.
+- **`ready`** — both costs are populated with real estimates and real basis strings. Priority engines consider the item from this status forward.
+- **`in_progress` onward** — implementation, review, deploy, validation.
+
+Work items may be enhanced at any point during their lifecycle — with a new `CompetingContext`, with a revised cost estimate, with additional risk notes — not just during `researching`. The `lineage` field tracks enhancement chains when one work item supersedes another.
+
+A work item that never finds an estimator can stay in `proposed` indefinitely or transition to `cancelled`; the spec does not set a timeout.
+
+---
+
+## 7. Work item lifecycle
 
 Work items move through statuses. Transitions are driven by agents, humans, or the feedback system:
 

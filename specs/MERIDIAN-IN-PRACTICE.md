@@ -79,32 +79,37 @@ const insight: InsightFeedback = {
 };
 ```
 
-### Work item creation
+### Work item creation (detector estimates cost-of-not-building only)
 
-The insight becomes a work item. Two cost estimates in real USD, per the Meridian work item schema ([`patterns/WORK-ITEM-SPEC.md`](patterns/WORK-ITEM-SPEC.md)):
+The insight becomes a work item. The Postgres agent is the detector: it observes infrastructure and can estimate the cost of NOT fixing the problem (projected query-cost curve from its own baselines). It has **no business** estimating cost-to-build — that's migration-window + engineering time + review risk, which lives in the engineering domain.
+
+The agent creates the work item in `proposed` status with `costToBuild` unestimated:
 
 ```typescript
-const item: WorkItem = {
+const proposed: WorkItem = {
   id: "wi_pg_index_orders_user_id_20260421",
   type: "story",
   title: "Add index on orders.user_id",
   description: "Detected hot query consuming 40% DB CPU. Missing index on orders.user_id.",
 
-  domains: ["infrastructure"],
+  domains: ["infrastructure", "engineering"],  // cross-domain: infra detects, engineering estimates
   source: "agent",
   sourceAgentId: "pg-query-optimizer-prod",
   lineage: undefined,
 
   costToBuild: {
-    amountUsd: 50,
-    breakdown: { tokens: 5, compute: 45 },
-    basis: "Similar migrations at Loom: 30-60 min agent time + ~20 min migration window on the replica.",
+    amountUsd: 0,
+    basis: "unestimated — engineering to provide during researching phase",
+    // no providedBy — cost-to-build is the engineering domain's to fill in
   },
 
   costOfNotBuilding: {
     amountUsd: 340,
     breakdown: { debtAccumulation: 340 },
     basis: "Projected monthly query cost if the traffic curve continues. Current run-rate: $260/mo and climbing.",
+    providedBy: "infrastructure",
+    estimatorAgentId: "pg-query-optimizer-prod",
+    estimatedAt: Date.now(),
   },
 
   confidence: 0.87,
@@ -114,6 +119,32 @@ const item: WorkItem = {
   updatedAt: Date.now(),
 };
 ```
+
+### Enhancement (engineering domain fills in cost-to-build)
+
+Routing rules ([`patterns/FEEDBACK-PROCESSING-SPEC.md`](patterns/FEEDBACK-PROCESSING-SPEC.md) §3.1) deliver the `proposed` work item to the engineering domain. An engineering agent (or engineer) estimates cost-to-build based on similar past migrations, then updates the work item and transitions its status:
+
+Note the estimate attribution on the proposed work item: `costOfNotBuilding` carries `providedBy: "infrastructure"` and names the specific agent that made the call. `costToBuild` has no attribution yet — engineering hasn't weighed in. This is the detector/estimator handoff ([`patterns/WORK-ITEM-SPEC.md`](patterns/WORK-ITEM-SPEC.md) §6) made visible in the data itself.
+
+```typescript
+// Engineering-domain update — fills in costToBuild with attribution
+await workItems.update(proposed.id, {
+  costToBuild: {
+    amountUsd: 50,
+    breakdown: { tokens: 5, compute: 45 },
+    basis: "Similar migrations at Loom: 30-60 min agent time + ~20 min migration window on the replica.",
+    providedBy: "engineering",
+    estimatorAgentId: "migration-cost-estimator-prod",
+    estimatedAt: Date.now(),
+  },
+  status: "researching",   // engineering is on it
+});
+
+// After estimate lands and peer review signs off:
+await workItems.update(proposed.id, { status: "ready" });
+```
+
+Only `ready` means "both costs present, priority engine can score it." Work items in `proposed` status are excluded from priority queries until the cross-domain estimate handoff completes. This is the general Meridian pattern: detectors describe the world; executors estimate their part; priority and scheduling come after the data is complete. A work item may pick up further enhancement (risk notes, CompetingContext, revised estimates with updated `estimatedAt`) throughout its life.
 
 ### Graduated enforcement
 
@@ -160,7 +191,9 @@ const insight: InsightFeedback = {
 };
 ```
 
-### Proposed work item
+### Proposed work item (detector creates; cost-to-build unestimated)
+
+Same pattern as Chapter 1: the Amplitude agent observes product metrics. It can estimate cost-of-not-building (projected lost activation revenue from the drop). It cannot estimate what it costs engineering and design to run an A/B copy experiment — that's eng-domain information.
 
 ```typescript
 const experiment: WorkItem = {
@@ -169,21 +202,23 @@ const experiment: WorkItem = {
   title: "Run onboarding copy v2 A/B experiment",
   description: "Hypothesis: step 3 drop is caused by unclear copy. Propose A/B test with rewritten copy.",
 
-  domains: ["product"],
+  domains: ["product", "engineering"],
   source: "agent",
   sourceAgentId: "amplitude-funnel-watcher-prod",
   lineage: "wi_onboarding_drop_root_cause_20260421",
 
   costToBuild: {
-    amountUsd: 1200,
-    breakdown: { humanHours: 16, compute: 200 },
-    basis: "Design + copy + experimentation setup + statistical analysis over a 2-week run.",
+    amountUsd: 0,
+    basis: "unestimated — product engineering to provide",
   },
 
   costOfNotBuilding: {
     amountUsd: 8400,
     breakdown: { revenueImpact: 8400 },
     basis: "Projected lost activation revenue if drop persists for 30 days.",
+    providedBy: "product",
+    estimatorAgentId: "amplitude-funnel-watcher-prod",
+    estimatedAt: Date.now(),
   },
 
   confidence: 0.72,
@@ -194,7 +229,7 @@ const experiment: WorkItem = {
 };
 ```
 
-### Competing context from the UX agent
+### Competing context from the UX agent (arrives before cost-to-build enhancement)
 
 The UX agent agrees there's a drop, but has counter-evidence. It raises a `CompetingContext` ([`patterns/FEEDBACK-PROCESSING-SPEC.md`](patterns/FEEDBACK-PROCESSING-SPEC.md) §2.3):
 
@@ -219,9 +254,11 @@ const objection: CompetingContext = {
 
 ### Human gate
 
-The product steward sees both sides in one view: the Amplitude agent's proposed experiment and the UX agent's competing context. Blast radius is `module`, which is below the escalation threshold spec'd in the priority engine spec (see `patterns/PRIORITY-ENGINE-SPEC.md`, landing in v1.0-draft.5). At `module`-scope, the decision is steward-judgment; the steward approves the UX agent's alternative.
+The product steward sees both sides in one view: the Amplitude agent's `proposed` experiment and the UX agent's competing context. Note what this catches: the objection arrives **before engineering has estimated cost-to-build** — the work item never had to leave `proposed` status for the steward to see that the underlying hypothesis is likely wrong. That's cycles saved on estimation work that would have been wasted.
 
-The result is written back to the system as a work-item lineage. The Amplitude agent's experiment is superseded with a link to the UX finding; the viewport fix becomes a new work item with the UX agent as source. Both sides are preserved in the audit record.
+Blast radius is `module`, which is below the escalation threshold spec'd in the priority engine spec (see `patterns/PRIORITY-ENGINE-SPEC.md`, landing in v1.0-draft.5). At `module`-scope, the decision is steward-judgment; the steward approves the UX agent's alternative.
+
+The result is written back to the system as a work-item lineage. The Amplitude agent's experiment is superseded with a link to the UX finding; the viewport fix becomes a new `proposed` work item with the UX agent as source (engineering will estimate cost-to-build as before). Both sides are preserved in the audit record.
 
 ---
 

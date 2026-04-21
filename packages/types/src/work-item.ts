@@ -67,5 +67,16 @@ export interface CostEstimate {
     riskExposure?: number;
     debtAccumulation?: number;
   };
-  basis?: string; // human-readable explanation of how this was estimated
+  /** Human-readable explanation of how this was estimated. */
+  basis?: string;
+  /**
+   * Domain accountable for this estimate. Encodes the detector/estimator
+   * handoff: on costOfNotBuilding this is usually the detecting domain; on
+   * costToBuild this is the executing domain. See WORK-ITEM-SPEC.md §6.
+   */
+  providedBy?: DomainId;
+  /** The specific agent that produced this estimate, if any. */
+  estimatorAgentId?: AgentId;
+  /** When the estimate was produced; used for staleness tracking. */
+  estimatedAt?: Timestamp;
 }
