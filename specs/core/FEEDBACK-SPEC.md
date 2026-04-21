@@ -98,7 +98,7 @@ Individual signal types extend this envelope with type-specific fields. See `@lo
 
 ## 5. Security: signal authenticity
 
-Signals that carry a `sourceAgentId` or similar identity claim must be validated by the runtime. In particular, runtimes MUST validate that `CompetingContext.sourceAgentId` (defined in [`../patterns/FEEDBACK-PROCESSING-SPEC.md`](../patterns/FEEDBACK-PROCESSING-SPEC.md)) matches the authenticated agent emitting the signal. Contexts that fail this check MUST be rejected with `PERMISSION_DENIED`. This is defense-in-depth: downstream consumers such as the priority engine (see [`../patterns/PRIORITY-ENGINE-SPEC.md`](../patterns/PRIORITY-ENGINE-SPEC.md), forthcoming in v1.0-draft.5) cannot make the check alone, since by the time an invalid context reaches them the rejection surface has moved out of the trust boundary.
+Signals that carry a `sourceAgentId` or similar identity claim must be validated by the runtime. In particular, runtimes MUST validate that `CompetingContext.sourceAgentId` (defined in [`../patterns/FEEDBACK-PROCESSING-SPEC.md`](../patterns/FEEDBACK-PROCESSING-SPEC.md)) matches the authenticated agent emitting the signal. Contexts that fail this check MUST be rejected with `PERMISSION_DENIED`. This is defense-in-depth: downstream consumers such as the priority engine (see [`../patterns/PRIORITY-ENGINE-SPEC.md`](../patterns/PRIORITY-ENGINE-SPEC.md)) cannot make the check alone, since by the time an invalid context reaches them the rejection surface has moved out of the trust boundary.
 
 ---
 

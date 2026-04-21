@@ -11,7 +11,7 @@ These patterns are **strongly recommended** for adopters who want Meridian's dis
 | [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) | Domain model: stewards, visible budgets, gates, cross-domain work |
 | [`WORK-ITEM-SPEC.md`](WORK-ITEM-SPEC.md) | Work item schema with two cost estimates (cost-to-build + cost-of-not-building) in USD |
 | [`FEEDBACK-PROCESSING-SPEC.md`](FEEDBACK-PROCESSING-SPEC.md) | Optional-tier feedback signals (quality, competing context, pattern recognition) + the five processing mechanisms |
-| `PRIORITY-ENGINE-SPEC.md` | (Forthcoming in v1.0-draft.5) Normative data contracts, escalation mechanism, and query protocol for priority engines. Reference formula in [`@loom-loyalty/meridian-priority-reference`](../../packages/priority-reference/) |
+| [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) | Normative data contracts, escalation mechanism, and query protocol for priority engines. Reference formula in [`@loom-loyalty/meridian-priority-reference`](../../packages/priority-reference/) |
 
 ## Where the core/patterns line sits
 

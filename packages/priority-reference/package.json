@@ -1,0 +1,30 @@
+{
+  "name": "@loom-loyalty/meridian-priority-reference",
+  "version": "0.1.0",
+  "description": "Reference priority engine for Meridian. WSJF-derived formula, circuit-breaker, explainability. See specs/patterns/PRIORITY-ENGINE-SPEC.md §8.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@loom-loyalty/meridian-types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

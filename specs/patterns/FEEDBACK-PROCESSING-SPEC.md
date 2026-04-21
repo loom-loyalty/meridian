@@ -49,7 +49,7 @@ Machine-readable counter-evidence emitted when a proposed change would affect a 
 - `suggestedAlternative` — optional alternative approach
 - `confidence` — 0.0 to 1.0
 
-Competing context is machine-readable so downstream consumers (including the priority engine; see [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md), forthcoming in v1.0-draft.5) can factor it into decisions. The [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) defines the normative escalation mechanism for contexts whose `blastRadius` exceeds `module`.
+Competing context is machine-readable so downstream consumers (including the priority engine; see [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md)) can factor it into decisions. [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) §4 defines the normative escalation mechanism for contexts whose `blastRadius` exceeds `module`.
 
 ### 2.4 Pattern recognition
 
@@ -73,7 +73,7 @@ Routing rules are configurable per domain. A payment system error routes to the 
 
 Components disagree. One agent says "this query is fine, it's the application code." Another says "this query is the bottleneck." Both provide evidence.
 
-The system does not pick a winner. It surfaces both perspectives with evidence using the `CompetingContext` format (defined in §2.3). The `CompetingContext` type is machine-readable: concern type, affected consumer count, revenue at risk, blast radius, breaking dependencies, confidence score. This enables implementations to factor competing perspectives into scoring. The normative escalation mechanism when `blastRadius` exceeds `module` is defined in [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) (forthcoming v1.0-draft.5).
+The system does not pick a winner. It surfaces both perspectives with evidence using the `CompetingContext` format (defined in §2.3). The `CompetingContext` type is machine-readable: concern type, affected consumer count, revenue at risk, blast radius, breaking dependencies, confidence score. This enables implementations to factor competing perspectives into scoring. The normative escalation mechanism when `blastRadius` exceeds `module` is defined in [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) §4.
 
 For conflicts above a configurable severity threshold, the system escalates to a human steward. For lower-severity conflicts, the system uses confidence scores to weight perspectives and records the resolution for future learning.
 

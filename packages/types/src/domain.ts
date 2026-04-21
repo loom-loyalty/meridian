@@ -3,7 +3,8 @@
  * Domains are organizational primitives based on accountability.
  */
 
-import type { AgentId, DomainId, Cost } from "./primitives.js";
+import type { AgentId, DomainId } from "./primitives.js";
+import type { DomainPriorityConfig } from "./work-item.js";
 
 export interface Domain {
   id: DomainId;
@@ -12,6 +13,12 @@ export interface Domain {
   stewards: Steward[];
   budget?: DomainBudget;
   gates?: GateConfig[];
+  /**
+   * Optional per-domain priority engine configuration. See
+   * specs/patterns/PRIORITY-ENGINE-SPEC.md §2. When absent, the engine
+   * applies the spec-defined default weight profile and circuit-breaker.
+   */
+  priorityConfig?: DomainPriorityConfig;
 }
 
 export interface Steward {

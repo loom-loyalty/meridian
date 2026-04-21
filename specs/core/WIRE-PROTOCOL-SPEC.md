@@ -1,6 +1,6 @@
 # Meridian Wire Protocol Specification
 
-**Version:** 1.0.0-draft.1
+**Version:** 1.0.0-draft.2
 **Status:** Draft
 **Date:** April 2026
 **License:** CC BY 4.0
@@ -96,9 +96,11 @@ The header is a MessagePack map with the following fields:
 | `0x10` | FEEDBACK | Feedback signal (heartbeat, error, metric, etc.) |
 | `0x20` | WORK_ITEM | Work item creation or update |
 | `0x30` | LIFECYCLE | Lifecycle event (spawn, suspend, resume, terminate) |
+| `0x40` | PRIORITY_QUERY | Agent query to a domain-local priority engine |
+| `0x41` | PRIORITY_RESPONSE | Response from a priority engine |
 | `0xFF` | SYSTEM | Control messages (ping, pong, auth) |
 
-Message types `0x04`-`0x0F`, `0x11`-`0x1F`, `0x21`-`0x2F`, and `0x31`-`0xFE` are reserved for future use.
+Message types `0x04`-`0x0F`, `0x11`-`0x1F`, `0x21`-`0x2F`, `0x31`-`0x3F`, `0x42`-`0x4F`, and `0x50`-`0xFE` are reserved for future use.
 
 ### 5.4 Payload
 
@@ -109,6 +111,8 @@ The payload is an opaque `Uint8Array` from the transport's perspective. Its inte
 - **FEEDBACK:** A serialized `FeedbackSignal` (as defined in the Feedback Contract Spec).
 - **WORK_ITEM:** A serialized `WorkItem` (as defined in the Work Item Schema Spec).
 - **LIFECYCLE:** A serialized lifecycle event.
+- **PRIORITY_QUERY:** A serialized `AgentPriorityQuery` (as defined in `@loom-loyalty/meridian-types`; see [`../patterns/PRIORITY-ENGINE-SPEC.md`](../patterns/PRIORITY-ENGINE-SPEC.md) §4). Addressed to the well-known recipient `"__priority__"` in the sending agent's domain.
+- **PRIORITY_RESPONSE:** A serialized `AgentPriorityResponse`. Correlated to the originating `PRIORITY_QUERY` via the frame header's `cor` field.
 - **SYSTEM:** Protocol-level control data.
 
 ---

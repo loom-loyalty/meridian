@@ -59,7 +59,7 @@ Types marked `@experimental` may change in minor versions. Currently experimenta
 - `Frame` / `FrameHeader` — wire protocol message structure
 - `FeedbackSignal` — union of all feedback types (heartbeat, cost, error, metric, insight, etc.)
 - `QualitySignal` — structured quality validation results with enforcement tiers
-- `CompetingContext` — machine-readable counter-evidence for priority scoring (see `specs/patterns/PRIORITY-ENGINE-SPEC.md`, landing in v1.0-draft.5)
+- `CompetingContext` — machine-readable counter-evidence for priority scoring (see `specs/patterns/PRIORITY-ENGINE-SPEC.md`)
 - `WorkItem` — unit of work with two cost estimates (cost to build, cost of NOT building)
 - `PermissionScope` — what services/methods an agent can access (experimental)
 
