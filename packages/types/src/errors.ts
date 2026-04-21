@@ -3,17 +3,21 @@
  * All primitives throw RuntimeError on failure.
  */
 
-export enum ErrorCategory {
-  NOT_FOUND = "not_found",
-  ALREADY_EXISTS = "already_exists",
-  PERMISSION_DENIED = "permission_denied",
-  RESOURCE_EXHAUSTED = "resource_exhausted",
-  INVALID_ARGUMENT = "invalid_argument",
-  TIMEOUT = "timeout",
-  UNAVAILABLE = "unavailable",
-  INTERNAL = "internal",
-  CANCELLED = "cancelled",
-}
+/**
+ * Error categories for Meridian runtime errors. String literal union; every
+ * other closed-value type in this package follows the same pattern so values
+ * are zero-cost at runtime and serialize directly to MessagePack / JSON.
+ */
+export type ErrorCategory =
+  | "not_found"
+  | "already_exists"
+  | "permission_denied"
+  | "resource_exhausted"
+  | "invalid_argument"
+  | "timeout"
+  | "unavailable"
+  | "internal"
+  | "cancelled";
 
 export class RuntimeError extends Error {
   category: ErrorCategory;
