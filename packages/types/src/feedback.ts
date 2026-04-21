@@ -3,13 +3,7 @@
  * Defines the structured signals every Meridian component emits.
  */
 
-import type {
-  AgentId,
-  DomainId,
-  WorkItemId,
-  Timestamp,
-  Cost,
-} from "./primitives.js";
+import type { AgentId, DomainId, Timestamp, Cost } from "./primitives.js";
 import type { QualitySignal, CompetingContext } from "./quality.js";
 
 /** Feedback tiers determine what the system requires from each component. */
@@ -88,14 +82,26 @@ export interface MetricFeedback {
   timestamp: Timestamp;
 }
 
-/** Expected: insight with confidence. */
+/**
+ * Expected: insight with confidence.
+ *
+ * The insight text may be supplied as a single `summary` (narrative-style,
+ * matches `MERIDIAN-IN-PRACTICE.md` Ch 1) or as the earlier `message` +
+ * `category` pair. At least one form SHOULD be present; all three are
+ * optional to preserve additive compatibility with prior v1.0-draft
+ * implementations.
+ */
 export interface InsightFeedback {
   tier: "expected";
   type: "insight";
   agentId: AgentId;
   confidence: number;
-  message: string;
-  category: string;
+  /** Single-field narrative summary of the insight. Preferred. */
+  summary?: string;
+  /** Legacy: structured message paired with {@link category}. */
+  message?: string;
+  /** Legacy: classification tag paired with {@link message}. */
+  category?: string;
   evidence?: unknown;
   suggestedAction?: string;
   timestamp: Timestamp;
