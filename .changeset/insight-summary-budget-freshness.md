@@ -19,4 +19,12 @@ optional `lastUpdatedAt: Timestamp` field. Non-breaking, additive;
 explainers can now read the value off the domain object instead of
 needing a separate parameter.
 
-Both changes are additive. No existing code paths break.
+Both changes are additive at the type-shape level. Existing in-repo
+consumers continue to typecheck. External consumers on TypeScript
+strict mode that destructure `insight.message` or `insight.category`
+into variables typed as `string` will see `string | undefined` after
+this bump and need to add a null check. No known external consumers
+exist at this pre-1.0 stage; tagging as minor rather than major on
+that basis. If we learn of downstream consumers during v0.1.x, we
+will re-evaluate.
+

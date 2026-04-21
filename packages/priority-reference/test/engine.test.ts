@@ -217,6 +217,7 @@ describe("WSJFPriorityEngine circuit-breaker", () => {
       tier: "required",
       type: "error",
       agentId: "pg-agent",
+      domain: "infrastructure",
       severity: "critical",
       category: "infrastructure",
       message: "db down",

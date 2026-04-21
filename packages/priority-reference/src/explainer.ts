@@ -40,7 +40,10 @@ const BUDGET_STALENESS_THRESHOLD_MS = 60_000;
 export function explain(ctx: ExplainContext): string {
   const now = ctx.now ?? Date.now();
   const summary = dominantFactorSummary(ctx);
-  const budget = budgetAnnotation(ctx.domain, ctx.domainBudgetReadAt, now);
+  // Prefer the DomainBudget.lastUpdatedAt field when set; fall back to the
+  // per-call ExplainContext override so existing callers keep working.
+  const readAt = ctx.domain?.budget?.lastUpdatedAt ?? ctx.domainBudgetReadAt;
+  const budget = budgetAnnotation(ctx.domain, readAt, now);
 
   return budget
     ? `#${ctx.rank} because ${summary} • ${budget}`

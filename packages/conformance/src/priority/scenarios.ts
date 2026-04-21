@@ -121,6 +121,7 @@ export const referenceScenarios: ConformanceScenario[] = [
           tier: "required",
           type: "error",
           agentId: "pg-agent",
+          domain: "infrastructure",
           severity: "critical",
           category: "infrastructure",
           message: "db down",
