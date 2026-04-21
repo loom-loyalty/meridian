@@ -78,8 +78,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build runtime-cloudflare
-        run: pnpm --filter @loom-loyalty/meridian-runtime-cloudflare build
+      - name: Build runtime-cloudflare (+ workspace deps)
+        # Turbo filter with leading `...` resolves + builds workspace
+        # dependencies first (meridian-types, etc.), not just the one
+        # package. Without this, `tsc` inside runtime-cloudflare fails
+        # because `meridian-types/dist` hasn't been produced yet.
+        run: pnpm turbo build --filter=...@loom-loyalty/meridian-runtime-cloudflare
 
       - name: Deploy test worker to Cloudflare
         id: deploy
