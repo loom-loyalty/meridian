@@ -4,8 +4,14 @@ export default defineWorkersConfig({
   test: {
     poolOptions: {
       workers: {
-        // Each test sets up its own agent IDs and terminates at the end; we
-        // rely on explicit teardown rather than the pool's auto-isolation.
+        // Single-runtime mode with one shared worker across all test
+        // files. Tests clean up agent state explicitly via
+        // `terminate()`. isolatedStorage=true runs afoul of the
+        // "isolated storage failed to pop" assertion that
+        // vitest-pool-workers raises when DO stubs aren't disposed
+        // across RPC boundaries; we don't use the `using` keyword
+        // yet, so stick with manual cleanup.
+        singleWorker: true,
         isolatedStorage: false,
         wrangler: { configPath: "./test/wrangler.toml" },
       },
