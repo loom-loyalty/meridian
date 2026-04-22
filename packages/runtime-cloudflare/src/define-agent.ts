@@ -37,6 +37,7 @@ import type {
   WorkItemId,
 } from "@loom-loyalty/meridian-types";
 
+import type { AgentEnv } from "./agent-do.js";
 import type { FiredSchedule } from "./primitives/cf-scheduling.js";
 import type { ObservabilityPlugin } from "./observability/types.js";
 
@@ -48,6 +49,15 @@ import type { ObservabilityPlugin } from "./observability/types.js";
 export interface AgentContext {
   readonly id: AgentId;
   readonly domain: DomainId;
+
+  /**
+   * The DO's wrangler-configured env (AgentEnv + any adopter bindings
+   * extending it — Hyperdrive, KV, R2, Secrets, etc.). Adopters who
+   * declare their extended env type cast via `ctx.env as MyEnv` to
+   * access typed bindings. The runtime itself only uses the
+   * `AgentEnv` subset (AGENT, REGISTRY, optional ANALYTICS).
+   */
+  readonly env: AgentEnv;
 
   readonly state: {
     save(key: string, value: unknown): Promise<void>;

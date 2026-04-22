@@ -1,0 +1,46 @@
+# cf-hyperdrive-postgres example — native-CF Meridian agent.
+#
+# Before `wrangler deploy`:
+#   1. `wrangler login`
+#   2. Provision a Postgres database (Neon / Supabase / RDS). Enable
+#      `pg_stat_statements` on it (`CREATE EXTENSION pg_stat_statements;`)
+#      and reset its view so the first agent run gets clean data.
+#   3. Create a Hyperdrive config pointing at your database:
+#      `wrangler hyperdrive create pg-monitor-prod --connection-string "postgres://..."`
+#      Copy the returned `id` into `[[hyperdrive]].id` below.
+#   4. `wrangler deploy` — DO migrations land on first invocation.
+#
+# See DEPLOY.md for the full 15-min walkthrough.
+
+name = "pg-monitor"
+main = "src/worker.ts"
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
+
+# Hyperdrive — the CF edge connection pooler that makes Postgres
+# reachable from Workers without per-request TLS handshakes. Replace
+# `id` with the one your `wrangler hyperdrive create` returned.
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "00000000000000000000000000000000" # REPLACE ME
+
+# Durable Object bindings the Meridian runtime needs.
+
+[[durable_objects.bindings]]
+name = "AGENT"
+class_name = "AgentDurableObject"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AgentDurableObject", "RegistryDurableObject"]
+
+# Workers Observability — non-sampled logs + exceptions in the
+# Cloudflare dashboard. Strongly recommended during v0.1 validation;
+# tune `head_sampling_rate` down for production volume.
+[observability]
+enabled = true
+head_sampling_rate = 1.0

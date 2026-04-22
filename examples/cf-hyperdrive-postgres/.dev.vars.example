@@ -1,0 +1,12 @@
+# Copy to `.dev.vars` for `wrangler dev` local runs. Not committed.
+#
+# With Hyperdrive, the connection string is baked into the Hyperdrive
+# config via `wrangler hyperdrive create` — not read from `.dev.vars`.
+# Local `wrangler dev` either (a) talks to the production Hyperdrive
+# config via --remote, or (b) uses the local Postgres connection
+# string stored in the Hyperdrive config.
+#
+# This file is a placeholder for non-Hyperdrive secrets (S3 keys,
+# webhook tokens, etc.) your agent might need. Add them per line:
+#
+#   # MY_API_KEY=your-key-here

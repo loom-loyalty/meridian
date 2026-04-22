@@ -42,7 +42,11 @@ import type {
 } from "@loom-loyalty/meridian-types";
 import { Cron } from "croner";
 
+import type { AgentEnv } from "../agent-do.js";
+import type { AgentContext } from "../define-agent.js";
+import { getAgentSpec } from "../define-agent.js";
 import { meridianError } from "../errors.js";
+import type { ObservabilityPlugin } from "../observability/types.js";
 
 interface AgentState {
   handle: AgentHandle;
@@ -106,6 +110,105 @@ export function createTestRuntime(): TestRuntime {
     return s;
   }
 
+  /**
+   * Dispatch an adopter hook by name. Errors are caught so a hook
+   * throw can't break the RPC that triggered it — matches the CF
+   * adapter's behavior (see agent-do.ts `emitHookError`). This
+   * closes the parity gap between in-memory and Miniflare-backed
+   * runtimes for hook-invocation semantics.
+   */
+  async function invokeSpecHook(
+    handle: AgentHandle,
+    name: "onSpawn" | "onMessage" | "onTerminate",
+    msg: IncomingMessage | undefined,
+  ): Promise<void> {
+    const spec = getAgentSpec(handle.id);
+    if (!spec) return;
+    try {
+      if (name === "onSpawn" && spec.onSpawn) {
+        await spec.onSpawn(buildContext(handle));
+      } else if (name === "onMessage" && spec.onMessage && msg) {
+        await spec.onMessage(buildContext(handle), msg);
+      } else if (name === "onTerminate" && spec.onTerminate) {
+        await spec.onTerminate(buildContext(handle));
+      }
+    } catch {
+      // Hook errors don't bubble — adopter code can add its own
+      // logging inside the hook. The CF adapter routes these to
+      // `meridian.hook.errors` obs metric + a structured error log;
+      // the in-memory runtime has no obs backend, so we swallow.
+    }
+  }
+
+  /**
+   * Build the AgentContext passed into adopter hooks. Mirrors
+   * `AgentDurableObject.contextFor` but uses the in-memory runtime's
+   * AgentRef methods for every primitive call. `env` is stubbed as
+   * an empty object cast to AgentEnv — adopters relying on their
+   * own env bindings should stub them via vitest mocks in their
+   * agent tests.
+   */
+  function buildContext(handle: AgentHandle): AgentContext {
+    const ref = agent(handle.id);
+    const noopObs: ObservabilityPlugin = {
+      log: () => {},
+      metric: () => {},
+      startSpan: () => ({
+        spanId: "",
+        traceId: "",
+        setAttribute: () => {},
+        addEvent: () => {},
+        end: () => {},
+      }),
+    };
+    return {
+      id: handle.id,
+      domain: handle.domain,
+      env: {} as AgentEnv,
+      state: {
+        save: (k, v) => ref.save(k, v),
+        load: (k) => ref.load(k),
+        delete: (k) => ref.delete(k),
+        list: (opts) => ref.list(opts),
+        // Generic update: read, apply, write. Matches the CF
+        // adapter's CfStatePlugin.update semantics minus the
+        // blockConcurrencyWhile gate (the in-memory runtime is
+        // single-threaded).
+        update: async <T>(k: string, updater: (cur: T | undefined) => T) => {
+          const current = await ref.load<T>(k);
+          const next = updater(current);
+          await ref.save(k, next);
+          return next;
+        },
+      },
+      transport: {
+        send: (to, payload) => ref.send(to, payload),
+        broadcast: (sel, payload) => ref.broadcast(sel, payload),
+      },
+      schedule: {
+        at: (when, payload) => ref.scheduleAt(when, payload),
+        cron: (cron, payload) => ref.scheduleCron(cron, payload),
+        cancel: (id) => ref.cancelSchedule(id),
+      },
+      resources: {
+        setLimits: (l) => ref.setLimits(l),
+        getLimits: () => ref.getLimits(),
+        getUsage: () => ref.getUsage(),
+        onLimitEvent: async () => {
+          // In-memory runtime doesn't emit limit events.
+        },
+        reportTokens: (n, attr) => ref.reportTokens(n, attr),
+        reportCost: (u, attr) => ref.reportCost(u, attr),
+        getUsageByWorkItem: (wid) => ref.getUsageByWorkItem(wid),
+        // beginOperation: no concurrency tracking in-memory. Return
+        // a no-op dispose so try/finally patterns in adopter hooks
+        // behave the same as on CF.
+        beginOperation: async () => async () => {},
+      },
+      obs: noopObs,
+    };
+  }
+
   const agent = (id: AgentId): AgentRef => ({
     async spawn(config: SpawnConfig): Promise<AgentHandle> {
       if (!config.id || !config.domain) {
@@ -144,11 +247,23 @@ export function createTestRuntime(): TestRuntime {
         spawnedAt: now,
       };
       world.set(id, freshState(handle));
+      // Invoke the adopter's onSpawn hook if a spec is registered.
+      // Hook errors are caught + logged per RUNTIME-SPEC §4.1 (a
+      // broken hook must not fail the spawn). In the CF adapter the
+      // error goes through emitHookError; here we just eat it since
+      // the in-memory runtime has no observability backend.
+      await invokeSpecHook(handle, "onSpawn", undefined);
       return handle;
     },
     async terminate(): Promise<void> {
       const s = world.get(id);
       if (!s) return;
+      // Fire onTerminate BEFORE wiping state so hooks still have
+      // access to state.load / transport / etc — matches the CF
+      // adapter's ordering.
+      if (!s.terminated) {
+        await invokeSpecHook(s.handle, "onTerminate", undefined);
+      }
       s.terminated = true;
       s.storage.clear();
       s.schedules.clear();
@@ -317,6 +432,10 @@ export function createTestRuntime(): TestRuntime {
         receivedAt: Date.now() as Timestamp,
       };
       recipient.inbox.push(msg);
+      // Fire the recipient's onMessage hook if registered. Matches
+      // the CF adapter's ordering: message is persisted first, hook
+      // runs after so a hook throw doesn't lose the message.
+      await invokeSpecHook(recipient.handle, "onMessage", msg);
       return { messageId: msg.messageId, queuedAt: msg.receivedAt };
     },
     async broadcast(
@@ -341,13 +460,16 @@ export function createTestRuntime(): TestRuntime {
       for (const r of recipients) {
         const nextSeq = (r.nextSeqBySender.get(id) ?? 0) + 1;
         r.nextSeqBySender.set(id, nextSeq);
-        r.inbox.push({
+        const msg: IncomingMessage = {
           messageId: `${id}::${nextSeq}`,
           fromAgentId: id,
           toAgentId: r.handle.id,
           payload: new Uint8Array(payload),
           receivedAt: queuedAt,
-        });
+        };
+        r.inbox.push(msg);
+        // Fire onMessage per recipient after persistence.
+        await invokeSpecHook(r.handle, "onMessage", msg);
       }
       return {
         broadcastId,

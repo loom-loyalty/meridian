@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "lib": ["ES2022", "DOM"],
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers"],
+    "noEmit": true
+  },
+  "include": ["src", "test"]
+}
