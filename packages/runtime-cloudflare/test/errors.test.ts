@@ -46,7 +46,9 @@ describe("error catalog", () => {
       expect(err.category).toBe(category);
       expect(err.retryable).toBe(false);
       expect(err.context?.code).toBe(code);
-      expect(err.context?.docUrl).toBe(`https://meridianprotocol.dev/errors/${code}`);
+      expect(err.context?.docUrl).toBe(
+        `https://meridianprotocol.dev/errors/${code}`,
+      );
       expect(err.message).toMatch(new RegExp(`^\\[${code}\\]`));
     }
   });
