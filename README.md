@@ -90,6 +90,39 @@ meridian/
 
 ## Getting started
 
+**Ship an agent in ~5 minutes** using the CLI:
+
+```bash
+pnpm dlx @loom-loyalty/meridian-cli init my-meridian-app
+cd my-meridian-app
+pnpm install
+meridian gen-token --dev-vars
+pnpm dev                                # wrangler dev, local Miniflare
+```
+
+Open `http://localhost:8787/.well-known/agent-card.json` to confirm
+the worker is up. Deploy to Cloudflare:
+
+```bash
+wrangler secret put MERIDIAN_ADMIN_TOKEN   # paste the local token
+wrangler deploy
+meridian doctor                            # verify end-to-end
+```
+
+Or one-click deploy the `cf-hyperdrive-postgres` example straight
+onto your CF account:
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/loom-loyalty/meridian/tree/main/examples/cf-hyperdrive-postgres)
+
+### Adopter docs
+
+- [**`defineAgent()` quickstart**](docs/guides/define-agent-quickstart.md) — 10-line agent walked line by line
+- [**`meridian doctor` troubleshooting**](docs/guides/doctor-troubleshooting.md) — what every check means + fixes
+- [**AgentCard `securitySchemes`**](docs/guides/agent-card-security-schemes.md) — how auth is advertised + rotated
+- [**Tenancy invariants**](docs/guides/tenancy-invariants.md) — the seven server-enforced guarantees in multi-tenant mode
+- [**Error catalog**](docs/errors/README.md) — every stable `MRD-CF-*` code with cause + fix
+
+### Working on the monorepo
+
 ```bash
 git clone https://github.com/loom-loyalty/meridian.git
 cd meridian
