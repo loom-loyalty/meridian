@@ -12,6 +12,7 @@ export type ErrorCategory =
   | "not_found"
   | "already_exists"
   | "permission_denied"
+  | "unauthenticated"
   | "resource_exhausted"
   | "invalid_argument"
   | "timeout"

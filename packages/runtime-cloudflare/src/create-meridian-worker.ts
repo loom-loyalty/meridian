@@ -50,6 +50,7 @@ import type { AgentSpec } from "./define-agent.js";
 import { defineAgent } from "./define-agent.js";
 import type { RuntimeError } from "@loom-loyalty/meridian-types";
 
+import { enforceBearer, type AuthConfig } from "./auth.js";
 import {
   isMeridianError,
   lookupMeridianCode,
@@ -71,6 +72,12 @@ export interface MeridianWorkerConfig {
    * so adopters can shadow built-ins if needed. Mostly used to add
    * adopter-specific monitoring / admin endpoints before M4 ships
    * official admin routes.
+   *
+   * Custom routes are NOT auth-gated by the helper — if `auth` is
+   * configured and a custom route must be authenticated, the adopter
+   * calls `enforceBearer(req, config.auth)` at the top of their
+   * handler. Keeping it explicit means public custom routes (e.g.
+   * a `/conformance` health probe) work without reconfiguration.
    */
   routes?: Record<string, MeridianRouteHandler>;
   /**
@@ -82,6 +89,32 @@ export interface MeridianWorkerConfig {
     description?: string;
     version?: string;
   };
+  /**
+   * Optional shared-secret bearer auth. When set, every mutation
+   * route (`POST /agents/:id/spawn`, `DELETE /agents/:id`,
+   * `POST /agents/:id/messages`, `POST /agents/:id/broadcast`,
+   * `POST /agents/:id/inbox/drain`) requires
+   * `Authorization: Bearer <token>`. Discovery reads (`GET /`,
+   * `GET /.well-known/agent-card.json`) and inbox reads (`GET
+   * /agents/:id`, `GET /agents/:id/inbox`) stay open for health
+   * checks and polling.
+   *
+   * Typical adopter pattern:
+   *
+   *     // wrangler secret put MERIDIAN_ADMIN_TOKEN
+   *     createMeridianWorker({
+   *       agents: [...],
+   *       auth: { bearer: env.MERIDIAN_ADMIN_TOKEN },
+   *     })
+   *
+   * When `auth.bearer` is falsy, auth is disabled (same as omitting
+   * the field). AgentCard `securitySchemes` reflects the enabled
+   * scheme so A2A-aware clients discover it.
+   *
+   * v0.1 ships shared-secret only. OIDC / OAuth2 / custom AuthPlugin
+   * arrive in v0.1.5.
+   */
+  auth?: AuthConfig;
 }
 
 // Maps MRD-CF-* error categories (from MeridianError.category) to HTTP status
@@ -150,6 +183,13 @@ export function createMeridianWorker(
         if (agentMatch) {
           const agentId = decodeURIComponent(agentMatch[1]!);
           const subPath = agentMatch[2] ?? "";
+          // Mutation routes (every non-GET in /agents/*) require
+          // bearer auth when configured. Reads (GET /agents/:id,
+          // GET /agents/:id/inbox) stay open — same policy as the
+          // AgentCard discovery endpoint.
+          if (req.method !== "GET") {
+            enforceBearer(req, config.auth);
+          }
           return await handleAgentRoute(req, env, agentId, subPath);
         }
       } catch (err) {
@@ -175,9 +215,22 @@ function healthResponse(): Response {
 
 function agentCardResponse(url: URL, config: MeridianWorkerConfig): Response {
   const baseUrl = `${url.protocol}//${url.host}`;
-  // AgentCard shape follows the A2A convention at a high level. v0.1
-  // ships without securitySchemes; M4 adds bearer + OIDC schemes here
-  // when the AuthPlugin interface stabilizes.
+  // AgentCard shape follows the A2A convention at a high level.
+  // `securitySchemes` reflects the auth configured on the worker so
+  // A2A-aware clients can discover the required scheme without a
+  // separate probe. When `auth.bearer` is set, we advertise the
+  // http-bearer scheme; otherwise the object stays empty (explicitly
+  // signalling an open worker — adopters who forgot to configure
+  // auth see this in their deployment smoke check).
+  const securitySchemes: Record<string, unknown> = {};
+  if (config.auth?.bearer) {
+    securitySchemes["bearer"] = {
+      type: "http",
+      scheme: "bearer",
+      description:
+        "Shared-secret bearer token. Send `Authorization: Bearer <MERIDIAN_ADMIN_TOKEN>` on all mutation routes.",
+    };
+  }
   const card = {
     protocolVersion: "v1",
     name: config.agentCard?.name ?? "meridian-worker",
@@ -192,7 +245,7 @@ function agentCardResponse(url: URL, config: MeridianWorkerConfig): Response {
       id: a.id,
       domain: a.domain,
     })),
-    securitySchemes: {},
+    securitySchemes,
   };
   return jsonResponse(card);
 }
