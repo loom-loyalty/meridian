@@ -1,8 +1,13 @@
 # Meridian
 
+[![CI](https://github.com/loom-loyalty/meridian/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/loom-loyalty/meridian/actions/workflows/ci.yml)
+[![E2E (Cloudflare)](https://github.com/loom-loyalty/meridian/actions/workflows/e2e-cloudflare.yml/badge.svg?branch=main)](https://github.com/loom-loyalty/meridian/actions/workflows/e2e-cloudflare.yml)
+
 > Meridian is the protocol for systems where agents operate, humans steward, and costs are visible in real time. It defines the wire format, runtime primitives, feedback contract, and skill declaration that let mixed agent-and-human organizations run lean — small teams of stewards setting direction and gating decisions, while domain agents handle operational work within visible budgets.
 
 Stewarded by [Loom Loyalty](https://github.com/loom-loyalty). Licensed under Apache 2.0 (code) and CC BY 4.0 (specs).
+
+The **E2E (Cloudflare)** badge above means the full runtime conformance suite runs against a real Cloudflare Workers deployment on every push to `main` — not a local emulator. If it's green, the reference adapter passes all applicable conformance scenarios on the platform it targets.
 
 ---
 
@@ -96,7 +101,7 @@ pnpm test
 
 ### Setup notes
 
-The project pins `pnpm@9.15.0` via the `packageManager` field and requires Node 20+. **Use a Node LTS release (20 or 22).** Node 22 is the current active LTS through April 2027; Node 20 is in maintenance through April 2026. CI runs on Node 20.
+The project pins `pnpm@9.15.0` via the `packageManager` field and requires Node 22+ (pinned via `.nvmrc`). Node 22 is the current active LTS through April 2027. CI runs on Node 22.
 
 Non-LTS Node releases (21, 23, 25) are "Current" line and are not officially supported by most tooling in the JS ecosystem. `npm` warns `EBADENGINE` on the latest `corepack`, `pnpm` may hit a bundled-corepack signature-verification bug, and any number of transitive deps will flake in ways you can't fix in this repo.
 
@@ -120,21 +125,26 @@ See [`.changeset/README.md`](.changeset/README.md) for the release workflow. Spe
 
 ## Packages
 
-| Package                        | Description                           | Status      |
-| ------------------------------ | ------------------------------------- | ----------- |
-| `@loom-loyalty/meridian-types` | Shared TypeScript types from the spec | In progress |
-| `@loom-loyalty/meridian-wire`  | MessagePack/WebSocket wire protocol   | In progress |
+Everything below is published to npm under `@loom-loyalty/*`.
+
+| Package                                     | Description                                                         | Status                |
+| ------------------------------------------- | ------------------------------------------------------------------- | --------------------- |
+| `@loom-loyalty/meridian-types`              | Shared TypeScript types from the spec                               | v0.1 (pre-1.0)        |
+| `@loom-loyalty/meridian-wire`               | MessagePack/WebSocket wire protocol                                 | v0.1 (pre-1.0)        |
+| `@loom-loyalty/meridian-priority-reference` | Reference priority engine (WSJF-derived formula + circuit breaker)  | v0.1 (pre-1.0)        |
+| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects runtime adapter                | v0.1 (verified on CF) |
+| `@loom-loyalty/meridian-conformance`        | Runtime + priority conformance test suite                           | v0.1 (pre-1.0)        |
+| `@loom-loyalty/meridian-cli`                | `meridian init / gen-token / demo / doctor / inspect / domains` CLI | v0.1 (pre-1.0)        |
 
 ## Roadmap
 
-These packages are named across the specs and will be published as they land. They do not exist in this tree today.
+Remaining packages on the v1.0 track:
 
-| Package                                     | Description                                      | Target       |
-| ------------------------------------------- | ------------------------------------------------ | ------------ |
-| `@loom-loyalty/meridian-priority-reference` | Reference priority engine (WSJF-derived formula) | v1.0-draft.5 |
-| `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects adapter     | v1.0         |
-| `@loom-loyalty/meridian-conformance`        | Runtime conformance test suite                   | v1.0         |
-| `@loom-loyalty/meridian-proxy`              | Credential brokering integration proxy           | v1.0         |
+| Package                        | Description                            | Target |
+| ------------------------------ | -------------------------------------- | ------ |
+| `@loom-loyalty/meridian-proxy` | Credential brokering integration proxy | v1.0   |
+
+Runtime milestones: M4 (auth + admin + CLI) shipped. Next: M6 tenancy depth, M7 docs + agent-card polish.
 
 ## Related projects
 
