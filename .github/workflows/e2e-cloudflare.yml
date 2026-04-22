@@ -36,9 +36,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run: ${{ steps.check.outputs.run }}
+    # Block the label-trigger path for forks: only PRs whose HEAD repo
+    # matches the main repo can run the deploy. A fork contributor who
+    # can apply the `e2e-cloudflare` label otherwise gets to execute
+    # arbitrary worker code with the repo's CF secrets. `push` and
+    # `workflow_dispatch` aren't fork-reachable, so they stay allowed.
     if: |
-      github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'e2e-cloudflare')
+      (github.event_name != 'pull_request') ||
+      (contains(github.event.pull_request.labels.*.name, 'e2e-cloudflare') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - id: check
         env:

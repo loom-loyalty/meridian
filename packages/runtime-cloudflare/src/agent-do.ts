@@ -33,16 +33,21 @@ import type {
   Timestamp,
 } from "@loom-loyalty/meridian-types";
 
-import { CfLifecyclePlugin } from "./primitives/cf-lifecycle.js";
+import {
+  CfLifecyclePlugin,
+  type LifecycleEnv,
+} from "./primitives/cf-lifecycle.js";
 import {
   CfSchedulingPlugin,
   type FiredSchedule,
 } from "./primitives/cf-scheduling.js";
 import { CfStatePlugin } from "./primitives/cf-state.js";
 
-export interface AgentEnv {
+import type { RegistryDurableObject } from "./registry-do.js";
+
+export interface AgentEnv extends LifecycleEnv {
   AGENT: DurableObjectNamespace<AgentDurableObject>;
-  REGISTRY: DurableObjectNamespace;
+  REGISTRY: DurableObjectNamespace<RegistryDurableObject>;
 }
 
 export interface InboxEntry {
@@ -60,9 +65,14 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env);
-    this.lifecycle = new CfLifecyclePlugin(ctx);
+    this.lifecycle = new CfLifecyclePlugin(ctx, env);
     this.state = new CfStatePlugin(ctx);
-    this.scheduling = new CfSchedulingPlugin(ctx);
+    this.scheduling = new CfSchedulingPlugin(
+      ctx,
+      // Resolve agent id from the lifecycle plugin at call time so the
+      // scheduling plugin doesn't peek into lifecycle's storage layout.
+      async () => (await this.lifecycle.requireMeta()).id,
+    );
   }
 
   /**
@@ -137,9 +147,21 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   // that wraps the update pattern internally.
 
   /**
-   * Atomic integer increment — test helper and example of the
-   * non-function RPC shape that replaces the raw update() surface.
-   * M2c generalizes this into the authoring API.
+   * Atomic integer increment. Public API — stable within a major
+   * version.
+   *
+   * This is the canonical pattern for atomic state updates from
+   * OUTSIDE the DO (e.g. a Worker fetch handler). The underlying
+   * state plugin's `update(key, fn)` primitive takes a function
+   * which can't cross the DO RPC boundary via structured clone, so
+   * data-shaped RPCs like this one wrap the common cases. Adopter
+   * code running INSIDE the DO (via defineAgent hooks, arriving in
+   * M2c) has full access to the generic update() through the
+   * authoring context.
+   *
+   * Pattern works for any value that supports "seed if undefined,
+   * add delta" semantics. For richer transformers, adopters define
+   * their own DO subclass methods following the same pattern.
    */
   async incrementAtomic(key: string, delta = 1): Promise<number> {
     return this.state.update<number>(key, (c) => (c ?? 0) + delta);
@@ -168,8 +190,15 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   }
 
   /**
-   * Pull the fired-schedule log. Test-facing in M2b; M2c replaces
-   * this with direct user `onSchedule` hook invocation.
+   * Pull-and-clear the fired-schedule log. Public API — stable
+   * within a major version.
+   *
+   * Each call returns every schedule fire that happened since the
+   * previous drain, then empties the log. M2c adds a direct
+   * `onSchedule` user hook (invoked inside the DO at fire time) for
+   * reactive handling; `drainFiredSchedules()` remains as the
+   * batch-poll companion — useful for inspection, replay, and
+   * adopters who prefer explicit pull semantics.
    */
   async drainFiredSchedules(): Promise<FiredSchedule[]> {
     return this.scheduling.drainFiredSchedules();

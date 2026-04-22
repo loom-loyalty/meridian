@@ -38,6 +38,16 @@ const FIRED_KEY = "__fired_schedules__";
 const MIN_DELAY_MS = 1_000; // 1 second
 const MAX_DELAY_MS = 365 * 24 * 60 * 60 * 1_000; // 365 days
 
+/**
+ * Upper bound on cron coalescing iterations. A cron fired in the past
+ * with a dense pattern (e.g. `* * * * *` offline for weeks) could spin
+ * the counter into the millions; we cap it so a misconfigured or
+ * long-outage cron can't burn the 30s CPU envelope and prevent other
+ * schedules from firing. 10_000 covers a `* * * * *` offline for ~7
+ * days, which is far past any realistic recovery window.
+ */
+const MAX_COALESCE_ITERATIONS = 10_000;
+
 export interface StoredSchedule {
   id: ScheduleId;
   type: "once" | "cron";
@@ -64,8 +74,16 @@ export interface FiredSchedule {
 }
 
 export class CfSchedulingPlugin implements SchedulingPlugin {
+  /**
+   * `getAgentId` resolves the current agent id at call time — we
+   * don't cache it at construction because spawn-after-terminate
+   * re-assigns identity. Wrapping it in a function means the
+   * scheduling plugin stays decoupled from the lifecycle plugin's
+   * storage layout.
+   */
   constructor(
     private readonly ctx: DurableObjectState,
+    private readonly getAgentId: () => Promise<string>,
     private readonly clock: () => Timestamp = Date.now,
   ) {}
 
@@ -121,6 +139,19 @@ export class CfSchedulingPlugin implements SchedulingPlugin {
         { context: { cron } },
       );
     }
+    // Enforce the same 365-day horizon as `scheduleAt`. Croner
+    // patterns like "0 0 29 2 *" (Feb 29) can legitimately schedule up
+    // to 4 years out, which silently bypasses the MAX_DELAY_MS bound
+    // that `scheduleAt` checks. Reject with MRD-CF-SC-002 for
+    // consistency.
+    const delay = next.getTime() - now;
+    if (delay > MAX_DELAY_MS) {
+      throw meridianError(
+        "MRD-CF-SC-002",
+        `cron pattern "${cron}" first fire in ${delay}ms exceeds 365-day maximum`,
+        { context: { cron, delayMs: delay } },
+      );
+    }
 
     const schedule: StoredSchedule = {
       id: crypto.randomUUID(),
@@ -152,8 +183,7 @@ export class CfSchedulingPlugin implements SchedulingPlugin {
 
   async listSchedules(): Promise<ScheduleInfo[]> {
     const schedules = await this.loadSchedules();
-    const meta = await this.ctx.storage.get<{ id: string }>("__meta__");
-    const agentId = meta?.id ?? "";
+    const agentId = await this.getAgentId();
     return schedules.map((s) => ({
       id: s.id,
       agentId,
@@ -192,13 +222,24 @@ export class CfSchedulingPlugin implements SchedulingPlugin {
 
       // Cron: compute how many ticks we missed while the DO was
       // offline, fire once, advance nextFireAt to the strictly-future
-      // next tick, keep the schedule on the list.
-      const cronJob = new Cron(s.cron!);
+      // next tick, keep the schedule on the list. Wrap the re-parse
+      // in try/catch so a single corrupted stored pattern can't crash
+      // the entire alarm handler (which would prevent every other
+      // schedule on this agent from firing).
+      let cronJob: Cron;
+      try {
+        cronJob = new Cron(s.cron!);
+      } catch {
+        // Drop the bad schedule; adopters see it disappear from
+        // listSchedules. M2d will replace this with a dead-letter
+        // queue and a quality signal.
+        continue;
+      }
       let coalescedTicks = 1;
       let probe = s.nextFireAt;
-      // Count past-due ticks: how many times would this cron have
-      // fired between `nextFireAt` and `now`?
-      for (;;) {
+      // Count past-due ticks up to the coalesce cap so a long-offline
+      // dense cron can't spin the loop past the DO's CPU envelope.
+      for (let i = 0; i < MAX_COALESCE_ITERATIONS; i++) {
         const next = cronJob.nextRun(new Date(probe));
         if (!next || next.getTime() > now) break;
         coalescedTicks++;
@@ -231,12 +272,13 @@ export class CfSchedulingPlugin implements SchedulingPlugin {
     await this.reprogramAlarm(remaining);
   }
 
-  // ── Test / M2c-bridging helpers ───────────────────────────
+  // ── Public API: fired-schedule log ────────────────────────
 
   /**
-   * Pull-and-clear the fired schedule log. Test-facing in M2b;
-   * M2c replaces this with direct `onSchedule` hook invocation on
-   * the user's AgentSpec inside `onAlarm`.
+   * Pull-and-clear the fired schedule log. Stable public API.
+   * M2c adds a direct `onSchedule` user hook invocation inside
+   * `onAlarm`; this polling surface stays alongside as the batch
+   * companion for inspection / replay / pull-semantics adopters.
    */
   async drainFiredSchedules(): Promise<FiredSchedule[]> {
     const fired = await this.loadFiredLog();
