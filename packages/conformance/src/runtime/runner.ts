@@ -50,31 +50,63 @@ export async function runRuntimeConformance(
       continue;
     }
 
-    const ctx = makeContext(scenario.name);
     const startedAt = Date.now();
-    try {
-      await scenario.run(runtime, ctx);
-      results.push({
-        scenario: scenario.name,
-        status: "passed",
-        durationMs: Date.now() - startedAt,
-      });
-    } catch (err) {
-      // Cloudflare wraps DO exceptions as "internal error; reference=XXX"
-      // which hides the real throw. We expand the failure reason with
-      // everything we can extract: constructor name, message, cause
-      // chain, first 6 stack frames. This is the diagnostic surface
-      // the real-CF E2E workflow uses when scenarios fail opaquely.
+    let lastErr: unknown = undefined;
+    // Transient-error retry budget: 2 attempts total. Only retries
+    // on known-transient errors (see `isTransientDOError`). Scenarios
+    // allocate fresh ids per ctx.uniqueId() call inside each run,
+    // so a retry gets a fully-fresh world — no risk of half-committed
+    // state poisoning the second attempt.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const ctx = makeContext(scenario.name);
+      try {
+        await scenario.run(runtime, ctx);
+        results.push({
+          scenario: scenario.name,
+          status: "passed",
+          durationMs: Date.now() - startedAt,
+        });
+        lastErr = undefined;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2 && isTransientDOError(err)) {
+          // Known transient — eat and retry. Most common case: real-CF
+          // killed a warm DO because code was just updated; the next
+          // call lands on fresh DOs with the deployed code.
+          continue;
+        }
+        break;
+      }
+    }
+    if (lastErr !== undefined) {
       results.push({
         scenario: scenario.name,
         status: "failed",
-        reason: formatFailure(err),
+        reason: formatFailure(lastErr),
         durationMs: Date.now() - startedAt,
       });
     }
   }
 
   return results;
+}
+
+/**
+ * Identify errors that are always safe to retry:
+ *
+ * - "Durable Object reset because its code was updated" — Cloudflare
+ *   kills warm DO instances on deploy. The first RPC to any warm DO
+ *   after a deploy throws this error; the next call lands on a fresh
+ *   DO running the new code. This is noise from our CI pattern of
+ *   deploy-then-immediately-run, not a real bug.
+ */
+function isTransientDOError(err: unknown): boolean {
+  const msg = (err as Error | undefined)?.message ?? "";
+  if (msg.includes("Durable Object reset because its code was updated")) {
+    return true;
+  }
+  return false;
 }
 
 function formatFailure(err: unknown): string {
