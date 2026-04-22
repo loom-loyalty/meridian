@@ -1,0 +1,24 @@
+{
+  "name": "@meridian/example-docker-kafka",
+  "private": true,
+  "version": "0.0.1",
+  "description": "External Meridian agent example: Kafka consumer-lag monitor running in a Docker sidecar, talking to a Meridian worker over HTTP",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/agent.js",
+    "dev": "node --import tsx src/agent.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@loom-loyalty/meridian-types": "workspace:*",
+    "kafkajs": "^2.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  }
+}
