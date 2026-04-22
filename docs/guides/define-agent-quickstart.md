@@ -108,11 +108,11 @@ interface AgentContext {
     setLimits(l): Promise<void>
     getLimits(): Promise<ResourceLimits>
     getUsage(): Promise<ResourceUsage>
-    onLimitEvent(h): void
+    onLimitEvent(h): Promise<void>
     reportTokens(n, attribution?): Promise<void>
     reportCost(usd, attribution?): Promise<void>
     getUsageByWorkItem(wid?): Promise<...>
-    beginOperation(): Promise<OperationHandle>
+    beginOperation(): Promise<() => Promise<void>>  // returns an "end" callback
   };
 
   obs: {
