@@ -17,6 +17,7 @@ export type { AgentSpec } from "./define-agent.js";
 
 export { AgentDurableObject } from "./agent-do.js";
 export type { AgentEnv, InboxEntry } from "./agent-do.js";
+export type { FiredSchedule } from "./primitives/cf-scheduling.js";
 
 export { RegistryDurableObject } from "./registry-do.js";
 export type { RegistryEnv } from "./registry-do.js";

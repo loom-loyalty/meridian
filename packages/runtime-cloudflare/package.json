@@ -25,7 +25,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@loom-loyalty/meridian-types": "workspace:*"
+    "@loom-loyalty/meridian-types": "workspace:*",
+    "croner": "^9.0.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",

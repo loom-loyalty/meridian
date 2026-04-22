@@ -35,6 +35,11 @@ export type MeridianErrorCode =
   | "MRD-CF-ST-001" // state key too large (> 1024 bytes utf-8)
   | "MRD-CF-ST-002" // state value too large (> 1 MB approximate)
   | "MRD-CF-ST-003" // state key empty or reserved (__meta__, __inbox__, state::, etc)
+  // Scheduling
+  | "MRD-CF-SC-001" // scheduleAt delay below 1-second minimum
+  | "MRD-CF-SC-002" // scheduleAt delay above 365-day maximum
+  | "MRD-CF-SC-003" // cron pattern invalid (croner parse failure)
+  | "MRD-CF-SC-004" // scheduleId not found on cancel
   // Experimental
   | "MRD-CF-EX-001" // snapshotState unavailable in v0.1
   | "MRD-CF-EX-002" // SpawnConfig.fromSnapshot rejected in v0.1
@@ -82,6 +87,26 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
     category: "invalid_argument",
     retryable: false,
     summary: "state key is empty or uses a reserved prefix (__, state::)",
+  },
+  "MRD-CF-SC-001": {
+    category: "invalid_argument",
+    retryable: false,
+    summary: "scheduleAt delay below 1-second minimum (RUNTIME-SPEC §4.3)",
+  },
+  "MRD-CF-SC-002": {
+    category: "invalid_argument",
+    retryable: false,
+    summary: "scheduleAt delay above 365-day maximum (RUNTIME-SPEC §4.3)",
+  },
+  "MRD-CF-SC-003": {
+    category: "invalid_argument",
+    retryable: false,
+    summary: "cron pattern rejected by croner",
+  },
+  "MRD-CF-SC-004": {
+    category: "not_found",
+    retryable: false,
+    summary: "scheduleId not registered on this agent",
   },
   "MRD-CF-EX-001": {
     category: "unavailable",

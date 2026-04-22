@@ -19,7 +19,10 @@ import type {
   AgentHandle,
   ListOptions,
   ListResult,
+  ScheduleId,
+  ScheduleInfo,
   SpawnConfig,
+  Timestamp,
 } from "@loom-loyalty/meridian-types";
 
 /**
@@ -53,4 +56,29 @@ export interface StatePlugin {
   delete(key: string): Promise<void>;
   list(opts?: ListOptions): Promise<ListResult>;
   update<T>(key: string, updater: (current: T | undefined) => T): Promise<T>;
+}
+
+/**
+ * Scheduled invocations for a single agent.
+ *
+ * Uses DO alarms under the hood: many schedules collapse onto one
+ * alarm set to the earliest pending fire time, and the plugin's alarm
+ * handler fires everything due + reschedules. Cron is parsed via
+ * `croner` (eng-review decision, 2026-04-21). `scheduleAt` validates
+ * the 1s/365d bounds from RUNTIME-SPEC §4.3; cron coalescing on
+ * resume handles the "DO was offline for N cron ticks, fire once"
+ * case.
+ */
+export interface SchedulingPlugin {
+  scheduleAt(when: Timestamp, payload?: unknown): Promise<ScheduleId>;
+  scheduleCron(cron: string, payload?: unknown): Promise<ScheduleId>;
+  cancel(scheduleId: ScheduleId): Promise<void>;
+  listSchedules(): Promise<ScheduleInfo[]>;
+  /**
+   * Called by the hosting DO's `alarm()` handler. Fires every
+   * schedule whose `nextFireAt` has elapsed and reprograms the
+   * alarm for the next due schedule. Cron schedules get their
+   * `nextFireAt` advanced; once schedules are removed post-fire.
+   */
+  onAlarm(): Promise<void>;
 }

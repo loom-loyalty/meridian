@@ -64,6 +64,9 @@ importers:
       '@loom-loyalty/meridian-types':
         specifier: workspace:*
         version: link:../types
+      croner:
+        specifier: ^9.0.0
+        version: 9.1.0
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.5.0
@@ -1002,6 +1005,10 @@ packages:
   cookie@0.7.2:
     resolution: {integrity: sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==}
     engines: {node: '>= 0.6'}
+
+  croner@9.1.0:
+    resolution: {integrity: sha512-p9nwwR4qyT5W996vBZhdvBCnMhicY5ytZkR4D1Xj0wuTDEiMnjwR57Q3RXYY/s0EpX6Ay3vgIcfaR+ewGHsi+g==}
+    engines: {node: '>=18.0'}
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -2415,6 +2422,8 @@ snapshots:
   confbox@0.1.8: {}
 
   cookie@0.7.2: {}
+
+  croner@9.1.0: {}
 
   cross-spawn@7.0.6:
     dependencies:
