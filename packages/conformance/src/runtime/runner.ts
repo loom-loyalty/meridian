@@ -60,10 +60,21 @@ export async function runRuntimeConformance(
         durationMs: Date.now() - startedAt,
       });
     } catch (err) {
+      // Cloudflare wraps DO exceptions as "internal error; reference=XXX"
+      // which hides the real throw. Include the first few stack frames
+      // so adopters (and the real-CF workflow) can pinpoint the divergence.
+      const e = err as Error;
+      const message = e.message || String(err);
+      const stackHead = e.stack
+        ? e.stack.split("\n").slice(0, 6).join(" | ")
+        : "no-stack";
+      const causeMsg = (e as { cause?: Error }).cause?.message;
       results.push({
         scenario: scenario.name,
         status: "failed",
-        reason: (err as Error).message || String(err),
+        reason: causeMsg
+          ? `${message} | cause: ${causeMsg} | stack: ${stackHead}`
+          : `${message} | stack: ${stackHead}`,
         durationMs: Date.now() - startedAt,
       });
     }

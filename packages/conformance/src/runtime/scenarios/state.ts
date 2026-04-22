@@ -51,7 +51,7 @@ export const stateReservedKeys: ConformanceScenario = {
 export const stateSizeLimits: ConformanceScenario = {
   name: "state-size-limits",
   description:
-    "key > 1024 bytes → MRD-CF-ST-001; value > 1 MB → MRD-CF-ST-002.",
+    "key > 1024 bytes → MRD-CF-ST-001; value whose JSON encoding > 1 MB → MRD-CF-ST-002.",
   appliesTo: ["miniflare", "real-cf", "in-memory"],
   async run(runtime, ctx) {
     const id = ctx.uniqueId("st-size");
@@ -65,11 +65,19 @@ export const stateSizeLimits: ConformanceScenario = {
       "save long key",
     );
 
-    const bigValue = "v".repeat(1_000_001);
+    // Use a control-char payload: U+0001 is 1 UTF-8 byte in memory
+    // but JSON.stringify encodes it as the 6-char escape ``, so a
+    // 200 KB raw string JSON-stringifies to ~1.2 MB. That exceeds the
+    // 1 MB cap our validator checks while keeping the RPC payload small
+    // enough to comfortably fit any Workers / DO RPC argument size
+    // limit — real CF bounces `"v".repeat(1_000_001)` at the platform
+    // boundary before our validation can run. `String.fromCharCode(1)`
+    // keeps the source file free of literal control chars.
+    const bigValue = String.fromCharCode(1).repeat(200_000);
     await expectReject(
       agent.save("k", bigValue),
       /MRD-CF-ST-002/,
-      "save oversize value",
+      "save value whose JSON encoding exceeds 1 MB",
     );
 
     await agent.terminate();
