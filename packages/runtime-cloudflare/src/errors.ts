@@ -55,7 +55,11 @@ export type MeridianErrorCode =
   | "MRD-CF-EX-002" // SpawnConfig.fromSnapshot rejected in v0.1
   | "MRD-CF-EX-003" // PermissionScope ignored (dropped with warning in v0.1)
   | "MRD-CF-EX-004" // setPermissions unavailable in v0.1
-  | "MRD-CF-EX-005"; // getPermissions unavailable in v0.1
+  | "MRD-CF-EX-005" // getPermissions unavailable in v0.1
+  // Auth (M4a — gating via Authorization: Bearer on mutation routes)
+  | "MRD-CF-AU-001" // missing Authorization header on a gated route
+  | "MRD-CF-AU-002" // Authorization header present but bearer token doesn't match
+  | "MRD-CF-AU-003"; // Authorization scheme other than Bearer (Basic, Digest, etc)
 
 interface CodeSpec {
   category: ErrorCategory;
@@ -192,6 +196,23 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
     retryable: false,
     summary:
       "getPermissions is @experimental and not implemented in v0.1 (AuthPlugin lands in v0.1.5)",
+  },
+  "MRD-CF-AU-001": {
+    category: "unauthenticated",
+    retryable: false,
+    summary:
+      "missing Authorization header on a route that requires bearer auth",
+  },
+  "MRD-CF-AU-002": {
+    category: "unauthenticated",
+    retryable: false,
+    summary: "bearer token does not match the configured auth.bearer",
+  },
+  "MRD-CF-AU-003": {
+    category: "unauthenticated",
+    retryable: false,
+    summary:
+      "Authorization header uses an unsupported scheme; only `Bearer <token>` is accepted in v0.1",
   },
 };
 

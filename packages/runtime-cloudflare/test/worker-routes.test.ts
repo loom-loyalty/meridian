@@ -287,3 +287,175 @@ describe("createMeridianWorker", () => {
     expect(root.body).toEqual({ overridden: true });
   });
 });
+
+// ── Bearer auth ───────────────────────────────────────────
+//
+// Auth is off when `config.auth` is undefined (verified by every
+// test above). This block exercises the enabled path.
+
+const TOKEN = "test-token-s3cr3t";
+
+function authedWorker() {
+  return createMeridianWorker({
+    agents: [],
+    auth: { bearer: TOKEN },
+  });
+}
+
+async function callWithHeaders(
+  worker: ReturnType<typeof makeWorker>,
+  method: string,
+  path: string,
+  headers: Record<string, string>,
+  body?: unknown,
+): Promise<{ status: number; body: unknown }> {
+  const req = new Request(`https://example.com${path}`, {
+    method,
+    headers: {
+      ...(body ? { "content-type": "application/json" } : {}),
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const res = await worker.fetch!(req, env, stubCtx);
+  const text = await res.text();
+  let parsed: unknown = text;
+  try {
+    parsed = text.length > 0 ? JSON.parse(text) : null;
+  } catch {
+    /* ignore */
+  }
+  return { status: res.status, body: parsed };
+}
+
+describe("createMeridianWorker bearer auth", () => {
+  it("mutation routes require Authorization header → MRD-CF-AU-001", async () => {
+    const worker = authedWorker();
+    const res = await call(worker, "POST", "/agents/wk-auth-a/spawn", {
+      domain: "demo",
+    });
+    expect(res.status).toBe(401);
+    const body = res.body as { error: { code: string } };
+    expect(body.error.code).toBe("MRD-CF-AU-001");
+  });
+
+  it("mutation routes reject non-Bearer schemes → MRD-CF-AU-003", async () => {
+    const worker = authedWorker();
+    const res = await callWithHeaders(
+      worker,
+      "POST",
+      "/agents/wk-auth-b/spawn",
+      { authorization: `Basic ${btoa("user:pass")}` },
+      { domain: "demo" },
+    );
+    expect(res.status).toBe(401);
+    const body = res.body as { error: { code: string } };
+    expect(body.error.code).toBe("MRD-CF-AU-003");
+  });
+
+  it("mutation routes reject wrong token → MRD-CF-AU-002", async () => {
+    const worker = authedWorker();
+    const res = await callWithHeaders(
+      worker,
+      "POST",
+      "/agents/wk-auth-c/spawn",
+      { authorization: "Bearer wrong-token" },
+      { domain: "demo" },
+    );
+    expect(res.status).toBe(401);
+    const body = res.body as { error: { code: string } };
+    expect(body.error.code).toBe("MRD-CF-AU-002");
+  });
+
+  it("mutation routes accept the correct token", async () => {
+    const worker = authedWorker();
+    const res = await callWithHeaders(
+      worker,
+      "POST",
+      "/agents/wk-auth-ok/spawn",
+      { authorization: `Bearer ${TOKEN}` },
+      { domain: "demo" },
+    );
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ id: "wk-auth-ok", domain: "demo" });
+
+    // Cleanup needs auth too.
+    const del = await callWithHeaders(worker, "DELETE", "/agents/wk-auth-ok", {
+      authorization: `Bearer ${TOKEN}`,
+    });
+    expect(del.status).toBe(204);
+  });
+
+  it("GET /.well-known/agent-card.json stays open and advertises the bearer scheme", async () => {
+    const worker = authedWorker();
+    const res = await call(worker, "GET", "/.well-known/agent-card.json");
+    expect(res.status).toBe(200);
+    const card = res.body as { securitySchemes: Record<string, unknown> };
+    expect(card.securitySchemes).toMatchObject({
+      bearer: { type: "http", scheme: "bearer" },
+    });
+  });
+
+  it("GET /.well-known/agent-card.json shows empty securitySchemes when auth is off", async () => {
+    const worker = createMeridianWorker({ agents: [] });
+    const res = await call(worker, "GET", "/.well-known/agent-card.json");
+    expect(res.status).toBe(200);
+    const card = res.body as { securitySchemes: Record<string, unknown> };
+    expect(card.securitySchemes).toEqual({});
+  });
+
+  it("GET /agents/:id + GET /agents/:id/inbox stay open (reads are not gated)", async () => {
+    // First spawn with auth, then verify the GETs work without it.
+    const worker = authedWorker();
+    await callWithHeaders(
+      worker,
+      "POST",
+      "/agents/wk-auth-reads/spawn",
+      { authorization: `Bearer ${TOKEN}` },
+      { domain: "demo" },
+    );
+
+    // GET handle, no auth header.
+    const get = await call(worker, "GET", "/agents/wk-auth-reads");
+    expect(get.status).toBe(200);
+    expect(get.body).toMatchObject({ id: "wk-auth-reads" });
+
+    // GET inbox, no auth header.
+    const inbox = await call(worker, "GET", "/agents/wk-auth-reads/inbox");
+    expect(inbox.status).toBe(200);
+
+    await callWithHeaders(worker, "DELETE", "/agents/wk-auth-reads", {
+      authorization: `Bearer ${TOKEN}`,
+    });
+  });
+
+  it("constant-time comparison rejects even tokens that differ only in the last byte", async () => {
+    const worker = authedWorker();
+    const almost = TOKEN.slice(0, -1) + "X";
+    const res = await callWithHeaders(
+      worker,
+      "POST",
+      "/agents/wk-auth-close/spawn",
+      { authorization: `Bearer ${almost}` },
+      { domain: "demo" },
+    );
+    expect(res.status).toBe(401);
+    expect((res.body as { error: { code: string } }).error.code).toBe(
+      "MRD-CF-AU-002",
+    );
+  });
+
+  it("empty bearer token disables auth (same as omitting auth)", async () => {
+    const worker = createMeridianWorker({
+      agents: [],
+      auth: { bearer: "" },
+    });
+    // No auth header on a mutation — should succeed.
+    const res = await call(worker, "POST", "/agents/wk-auth-empty/spawn", {
+      domain: "demo",
+    });
+    expect(res.status).toBe(201);
+
+    await call(worker, "DELETE", "/agents/wk-auth-empty");
+  });
+});

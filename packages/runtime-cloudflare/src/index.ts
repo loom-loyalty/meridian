@@ -29,6 +29,12 @@ export type {
   MeridianRouteHandler,
 } from "./create-meridian-worker.js";
 
+// Auth primitives. `enforceBearer` is exported so adopters can gate
+// custom routes the same way built-ins are gated, without reaching
+// into request parsing themselves.
+export { enforceBearer } from "./auth.js";
+export type { AuthConfig, BearerAuthConfig } from "./auth.js";
+
 // Observability — the one plugin interface we export publicly in
 // v0.1. Adopters swap in OTEL/Datadog/Honeycomb adapters by
 // implementing this interface.
