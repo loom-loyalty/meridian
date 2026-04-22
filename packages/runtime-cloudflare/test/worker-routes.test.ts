@@ -459,3 +459,178 @@ describe("createMeridianWorker bearer auth", () => {
     await call(worker, "DELETE", "/agents/wk-auth-empty");
   });
 });
+
+// ── Admin routes ──────────────────────────────────────────
+//
+// v0.1 admin surface:
+//   GET /admin/domains       — agents grouped by domain
+//   GET /admin/agents/:id    — unified inspect payload
+//
+// Every admin route is bearer-gated when `auth` is configured. Reads
+// that enumerate operational state live here (unlike `GET /agents/:id`
+// which stays open for polling).
+
+describe("createMeridianWorker admin routes", () => {
+  it("GET /admin/domains returns agents grouped by domain (no auth)", async () => {
+    const worker = makeWorker();
+    // Spawn a few agents across two domains. Use distinct ids per test
+    // so isolate-shared state from other `worker-routes` tests doesn't
+    // collide.
+    await call(worker, "POST", "/agents/adm-domains-a/spawn", {
+      domain: "adm-x",
+    });
+    await call(worker, "POST", "/agents/adm-domains-b/spawn", {
+      domain: "adm-x",
+    });
+    await call(worker, "POST", "/agents/adm-domains-c/spawn", {
+      domain: "adm-y",
+    });
+
+    const res = await call(worker, "GET", "/admin/domains");
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      domains: Array<{ domain: string; agentIds: string[] }>;
+    };
+
+    const admX = body.domains.find((d) => d.domain === "adm-x");
+    const admY = body.domains.find((d) => d.domain === "adm-y");
+    expect(admX).toBeDefined();
+    expect(admY).toBeDefined();
+    expect(admX!.agentIds).toEqual(
+      expect.arrayContaining(["adm-domains-a", "adm-domains-b"]),
+    );
+    expect(admY!.agentIds).toEqual(expect.arrayContaining(["adm-domains-c"]));
+    // Sorted output contract — agentIds ascending.
+    expect([...admX!.agentIds]).toEqual([...admX!.agentIds].sort());
+
+    await call(worker, "DELETE", "/agents/adm-domains-a");
+    await call(worker, "DELETE", "/agents/adm-domains-b");
+    await call(worker, "DELETE", "/agents/adm-domains-c");
+  });
+
+  it("GET /admin/agents/:id returns unified inspect payload", async () => {
+    const worker = makeWorker();
+    await call(worker, "POST", "/agents/adm-inspect/spawn", {
+      domain: "adm-x",
+    });
+
+    // Queue a state write + a schedule + an inbound message via a
+    // second agent so every field of the inspect response has
+    // non-trivial data.
+    await call(worker, "POST", "/agents/adm-inspect-peer/spawn", {
+      domain: "adm-x",
+    });
+    await call(worker, "POST", "/agents/adm-inspect-peer/messages", {
+      to: "adm-inspect",
+      payload: btoa("inbox msg"),
+    });
+
+    const res = await call(worker, "GET", "/admin/agents/adm-inspect");
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      agent: { id: string; domain: string; status: string };
+      schedules: unknown[];
+      usage: { current: { tokensLifetime: number; costUsdLifetime: number } };
+      state: { keys: string[] };
+      inbox: { length: number };
+    };
+    expect(body.agent).toMatchObject({
+      id: "adm-inspect",
+      domain: "adm-x",
+      status: "running",
+    });
+    expect(Array.isArray(body.schedules)).toBe(true);
+    expect(body.usage.current.tokensLifetime).toBe(0);
+    expect(body.usage.current.costUsdLifetime).toBe(0);
+    expect(Array.isArray(body.state.keys)).toBe(true);
+    expect(body.inbox.length).toBe(1);
+
+    await call(worker, "DELETE", "/agents/adm-inspect");
+    await call(worker, "DELETE", "/agents/adm-inspect-peer");
+  });
+
+  it("GET /admin/agents/:id on unspawned agent returns 404 with MRD-CF-LC-002", async () => {
+    const worker = makeWorker();
+    const res = await call(worker, "GET", "/admin/agents/adm-not-spawned");
+    expect(res.status).toBe(404);
+    const body = res.body as { error: { code: string } };
+    expect(body.error.code).toBe("MRD-CF-LC-002");
+  });
+
+  it("unknown /admin/* path returns 404", async () => {
+    const worker = makeWorker();
+    const res = await call(worker, "GET", "/admin/unknown-path");
+    expect(res.status).toBe(404);
+  });
+
+  it("non-GET on /admin/domains returns 405", async () => {
+    const worker = makeWorker();
+    const req = new Request("https://example.com/admin/domains", {
+      method: "POST",
+    });
+    const res = await worker.fetch!(req, env, stubCtx);
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("GET");
+  });
+
+  // ── Auth-gated variants ─────────────────────────────────
+
+  it("GET /admin/domains requires bearer when auth configured → MRD-CF-AU-001", async () => {
+    const worker = authedWorker();
+    const res = await call(worker, "GET", "/admin/domains");
+    expect(res.status).toBe(401);
+    const body = res.body as { error: { code: string } };
+    expect(body.error.code).toBe("MRD-CF-AU-001");
+  });
+
+  it("GET /admin/domains with valid bearer succeeds", async () => {
+    const worker = createMeridianWorker({
+      agents: [],
+      auth: { bearer: TOKEN },
+    });
+    // Spawn through the same authed worker so the registry has an
+    // entry to list.
+    await callWithHeaders(
+      worker,
+      "POST",
+      "/agents/adm-auth-a/spawn",
+      { authorization: `Bearer ${TOKEN}` },
+      { domain: "adm-auth" },
+    );
+
+    const res = await callWithHeaders(worker, "GET", "/admin/domains", {
+      authorization: `Bearer ${TOKEN}`,
+    });
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      domains: Array<{ domain: string; agentIds: string[] }>;
+    };
+    expect(
+      body.domains.some(
+        (d) => d.domain === "adm-auth" && d.agentIds.includes("adm-auth-a"),
+      ),
+    ).toBe(true);
+
+    await callWithHeaders(worker, "DELETE", "/agents/adm-auth-a", {
+      authorization: `Bearer ${TOKEN}`,
+    });
+  });
+
+  it("GET /admin/agents/:id requires bearer when auth configured → MRD-CF-AU-001", async () => {
+    const worker = authedWorker();
+    const res = await call(worker, "GET", "/admin/agents/anything");
+    expect(res.status).toBe(401);
+    const body = res.body as { error: { code: string } };
+    expect(body.error.code).toBe("MRD-CF-AU-001");
+  });
+
+  it("GET /admin/agents/:id with wrong bearer → MRD-CF-AU-002", async () => {
+    const worker = authedWorker();
+    const res = await callWithHeaders(worker, "GET", "/admin/agents/anything", {
+      authorization: "Bearer wrong-token",
+    });
+    expect(res.status).toBe(401);
+    const body = res.body as { error: { code: string } };
+    expect(body.error.code).toBe("MRD-CF-AU-002");
+  });
+});

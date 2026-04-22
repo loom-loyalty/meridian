@@ -14,9 +14,12 @@
  *     POST   /agents/:id/broadcast          → broadcast
  *     GET    /agents/:id/inbox              → inbox snapshot
  *     POST   /agents/:id/inbox/drain        → inbox pull-and-clear
+ *     GET    /admin/domains                 → list agents by domain
+ *     GET    /admin/agents/:id              → unified inspect
  *
- * Every route delegates to `env.AGENT` DO RPCs — no work happens in
- * the Worker itself beyond request parsing and response shaping.
+ * Every route delegates to `env.AGENT` / `env.REGISTRY` DO RPCs — no
+ * work happens in the Worker itself beyond request parsing and
+ * response shaping.
  *
  * **No auth in v0.1.** Adopters MUST NOT expose this worker publicly
  * without M4's bearer auth. Mitigations for pre-M4 deploys:
@@ -48,6 +51,7 @@ import type {
 import type { AgentDurableObject, AgentEnv } from "./agent-do.js";
 import type { AgentSpec } from "./define-agent.js";
 import { defineAgent } from "./define-agent.js";
+import type { RegistryDurableObject } from "./registry-do.js";
 import type { RuntimeError } from "@loom-loyalty/meridian-types";
 
 import { enforceBearer, type AuthConfig } from "./auth.js";
@@ -191,6 +195,16 @@ export function createMeridianWorker(
             enforceBearer(req, config.auth);
           }
           return await handleAgentRoute(req, env, agentId, subPath);
+        }
+
+        // /admin/* routes — EVERY method gated by bearer auth when
+        // configured, including reads. These expose operational data
+        // (state keys, usage rollups, full agent list) that adopters
+        // don't want enumerable without a token. `GET /admin/domains`
+        // and `GET /admin/agents/:id` land here.
+        if (url.pathname.startsWith("/admin/")) {
+          enforceBearer(req, config.auth);
+          return await handleAdminRoute(req, env, url);
         }
       } catch (err) {
         return errorResponse(err);
@@ -344,6 +358,120 @@ async function handleAgentRoute(
     { error: { message: `Unknown agent subpath: ${subPath}` } },
     { status: 404 },
   );
+}
+
+// ── admin routes ────────────────────────────────────────────
+//
+// Operational surface for adopters / the `meridian-cli`. Read-only in
+// v0.1 — no agent mutations land here (spawn / terminate stay on the
+// `/agents/*` surface). Every route is bearer-gated by the dispatcher
+// above, including GETs, because the shape of the data (full agent
+// list, state key enumeration, usage rollups) is sensitive enough to
+// not be enumerable without a token.
+//
+// v0.1 GA:
+//   GET /admin/domains           → { domains: [{ domain, agentIds }] }
+//   GET /admin/agents/:id        → unified inspect: handle +
+//                                   schedules + usage + stateKeys +
+//                                   inboxLength
+//
+// Experimental surface (tail, queue, etc.) lands in M4c behind
+// `--experimental`. Shape there may shift across v0.1.x.
+
+// Registry shard key. Mirrors `cf-lifecycle.ts` /
+// `cf-transport.ts`; when the sharded registry lands in M6,
+// admin routes will fan out across all shards instead of hitting
+// one.
+const ADMIN_REGISTRY_KEY = "default";
+
+async function handleAdminRoute(
+  req: Request,
+  env: AgentEnv,
+  url: URL,
+): Promise<Response> {
+  // /admin/domains — list registered agents grouped by domain.
+  if (url.pathname === "/admin/domains") {
+    if (req.method !== "GET") return methodNotAllowed(["GET"]);
+    return handleAdminDomains(env);
+  }
+
+  // /admin/agents/:id — inspect one agent (handle + usage +
+  // schedules + state-key snapshot + inbox length).
+  const inspectMatch = url.pathname.match(/^\/admin\/agents\/([^/]+)$/);
+  if (inspectMatch) {
+    if (req.method !== "GET") return methodNotAllowed(["GET"]);
+    const agentId = decodeURIComponent(inspectMatch[1]!);
+    return handleAdminInspect(env, agentId);
+  }
+
+  return jsonResponse(
+    { error: { message: `Unknown admin path: ${url.pathname}` } },
+    { status: 404 },
+  );
+}
+
+async function handleAdminDomains(env: AgentEnv): Promise<Response> {
+  const registry = env.REGISTRY.get(
+    env.REGISTRY.idFromName(ADMIN_REGISTRY_KEY),
+  ) as unknown as DurableObjectStub<RegistryDurableObject>;
+  const entries = await registry.list();
+
+  // Group entries by domain and sort both the domains and their
+  // agentIds so the response is deterministic (nice for cache
+  // keys + test assertions).
+  const byDomain = new Map<DomainId, AgentId[]>();
+  for (const entry of entries) {
+    const bucket = byDomain.get(entry.domain) ?? [];
+    bucket.push(entry.id);
+    byDomain.set(entry.domain, bucket);
+  }
+  const domains = Array.from(byDomain.entries())
+    .map(([domain, agentIds]) => ({
+      domain,
+      agentIds: [...agentIds].sort(),
+    }))
+    .sort((a, b) => a.domain.localeCompare(b.domain));
+
+  return jsonResponse({ domains });
+}
+
+async function handleAdminInspect(
+  env: AgentEnv,
+  agentId: AgentId,
+): Promise<Response> {
+  const stub = env.AGENT.get(
+    env.AGENT.idFromName(agentId),
+  ) as unknown as DurableObjectStub<AgentDurableObject>;
+
+  // Pull everything in parallel. `stub.get()` throws MRD-CF-LC-002
+  // when the agent has never been spawned on this DO; that error
+  // propagates through `errorResponse()` to a 404 with the stable
+  // MRD code — which is exactly the shape adopters need.
+  //
+  // Every other call gates on `requireMeta()` internally so a
+  // pre-spawn inspect fails fast on the handle fetch and the rest
+  // never run. Running them in parallel still works because
+  // `Promise.all` rejects on the first throw.
+  const [handle, schedules, usage, stateList, inbox] = await Promise.all([
+    stub.get(),
+    stub.listSchedules(),
+    stub.getUsage(),
+    stub.list({ prefix: "" }),
+    stub.receiveAll(),
+  ]);
+
+  return jsonResponse({
+    agent: handle,
+    schedules,
+    usage,
+    state: {
+      keys: stateList.keys,
+      cursor: stateList.cursor,
+    },
+    inbox: {
+      length: inbox.length,
+    },
+  });
 }
 
 // ── helpers ─────────────────────────────────────────────────
