@@ -111,6 +111,10 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
       // Inbound message hook: if the adopter's AgentSpec has an
       // `onMessage` defined, fire it with a context bound to this DO.
       async (msg) => this.invokeOnMessage(msg),
+      // Sender-tenant resolver. Returns the tenantId stored in this
+      // DO's meta (set at spawn time). Transport uses it to scope
+      // target DO names + registry queries to this tenant.
+      async () => (await this.lifecycle.requireMeta()).tenantId,
     );
     this.resources = new CfResourcesPlugin(ctx, {
       // Adopter-supplied LimitEventHandler throws shouldn't vanish

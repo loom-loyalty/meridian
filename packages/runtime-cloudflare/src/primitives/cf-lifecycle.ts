@@ -51,12 +51,13 @@ export interface LifecycleEnv {
 }
 
 /**
- * Fixed registry shard key for v0.1. M2c tenancy replaces this with
- * `${tenantId}::shard-${hash(agentId) & 15}` per the eng-review
- * decision; keeping a single key here means the shard rollout is
- * purely a key-format change, not a data migration.
+ * Registry shard key for single-tenant mode. Multi-tenant deploys
+ * prefix this with the tenantId (see `scopedRegistryKey` in
+ * `../tenancy.ts`), so the v0.1 `"default"` layout stays untouched
+ * for adopters who don't configure `tenancy` on
+ * `createMeridianWorker`.
  */
-const REGISTRY_SHARD_KEY = "default";
+const DEFAULT_REGISTRY_SHARD_KEY = "default";
 
 interface AgentMeta {
   id: AgentId;
@@ -64,6 +65,13 @@ interface AgentMeta {
   status: AgentHandle["status"];
   spawnedAt: Timestamp;
   metadata?: Record<string, string>;
+  /**
+   * Set when the agent was spawned through a tenancy-enabled worker.
+   * Carried in meta so DO-internal plumbing (registry queries,
+   * cross-agent sends) can scope to the same tenant without
+   * re-consulting the request.
+   */
+  tenantId?: string;
 }
 
 const META_KEY = "__meta__";
@@ -82,10 +90,20 @@ export class CfLifecyclePlugin implements LifecyclePlugin {
     private readonly env: LifecycleEnv,
   ) {}
 
-  private registryStub(): DurableObjectStub<RegistryDurableObject> {
-    return this.env.REGISTRY.get(
-      this.env.REGISTRY.idFromName(REGISTRY_SHARD_KEY),
-    );
+  /**
+   * Resolve the registry stub for this DO's tenant. When the agent
+   * was spawned without a tenantId (single-tenant mode), returns
+   * the v0.1 default-shard DO. When spawned with a tenantId, the
+   * shard key is prefixed so each tenant has its own registry DO
+   * with its own agent list.
+   */
+  private registryStub(
+    tenantId?: string,
+  ): DurableObjectStub<RegistryDurableObject> {
+    const key = tenantId
+      ? `${tenantId}::${DEFAULT_REGISTRY_SHARD_KEY}`
+      : DEFAULT_REGISTRY_SHARD_KEY;
+    return this.env.REGISTRY.get(this.env.REGISTRY.idFromName(key));
   }
 
   async spawn(config: SpawnConfig): Promise<AgentHandle> {
@@ -96,21 +114,36 @@ export class CfLifecyclePlugin implements LifecyclePlugin {
     // Guard against sender-identity spoofing. `env.AGENT.idFromName()`
     // is a deterministic hash of the name, so we compute the id the
     // caller WOULD have produced had they addressed this DO via
-    // `idFromName(config.id)`, and compare with `this.ctx.id` (the
+    // `idFromName(nameForAgent)`, and compare with `this.ctx.id` (the
     // id this DO actually lives under). Any mismatch means the DO
     // was addressed by one name but is being spawned with a different
     // declared identity — adopters could use that to make `sendTo`
-    // stamp a forged sender. This check works in real CF and
-    // Miniflare because `idFromName(x).toString()` is deterministic
-    // regardless of runtime (unlike `ctx.id.name`, which Miniflare
-    // does not always populate).
-    const expectedId = this.env.AGENT.idFromName(config.id).toString();
+    // stamp a forged sender.
+    //
+    // Tenancy-aware: when `config.tenantId` is set, the expected name
+    // is `${tenantId}::${id}` (matches the worker-side scoping in
+    // `tenancy.ts#scopedAgentName`). Cross-tenant spawn attempts —
+    // e.g. tenant X tries to spawn an agent under tenant Y's
+    // namespace — are rejected here with MRD-CF-LC-005 because the
+    // caller addressed this DO with a name that doesn't match the
+    // claimed tenant.
+    const nameForAgent = config.tenantId
+      ? `${config.tenantId}::${config.id}`
+      : config.id;
+    const expectedId = this.env.AGENT.idFromName(nameForAgent).toString();
     const actualId = this.ctx.id.toString();
     if (expectedId !== actualId) {
       throw meridianError(
         "MRD-CF-LC-005",
-        `DO id "${actualId}" does not match idFromName("${config.id}") = "${expectedId}"`,
-        { context: { expectedId, actualId, configId: config.id } },
+        `DO id "${actualId}" does not match idFromName("${nameForAgent}") = "${expectedId}"`,
+        {
+          context: {
+            expectedId,
+            actualId,
+            configId: config.id,
+            tenantId: config.tenantId,
+          },
+        },
       );
     }
 
@@ -132,18 +165,27 @@ export class CfLifecyclePlugin implements LifecyclePlugin {
 
     const existing = await this.ctx.storage.get<AgentMeta>(META_KEY);
 
-    // Spawn is idempotent for the same (id, domain) tuple per the
-    // idempotent? hint in SpawnConfig; identity changes are rejected
-    // regardless of the hint because a DO name is 1:1 with agentId.
+    // Spawn is idempotent for the same (id, domain, tenantId) tuple
+    // per the idempotent? hint in SpawnConfig; identity changes
+    // (including tenant changes) are rejected because a DO name is
+    // 1:1 with (tenantId, agentId).
     if (existing) {
-      if (existing.id !== config.id || existing.domain !== config.domain) {
+      if (
+        existing.id !== config.id ||
+        existing.domain !== config.domain ||
+        existing.tenantId !== config.tenantId
+      ) {
         throw meridianError(
           "MRD-CF-LC-001",
           `existing agent ${existing.id}/${existing.domain} on this DO; cannot re-spawn as ${config.id}/${config.domain}`,
           {
             context: {
               existing,
-              requested: { id: config.id, domain: config.domain },
+              requested: {
+                id: config.id,
+                domain: config.domain,
+                tenantId: config.tenantId,
+              },
             },
           },
         );
@@ -157,16 +199,19 @@ export class CfLifecyclePlugin implements LifecyclePlugin {
       status: "running",
       spawnedAt: Date.now(),
       metadata: config.metadata,
+      tenantId: config.tenantId,
     };
     await this.ctx.storage.put(META_KEY, meta);
     await this.ctx.storage.delete(TERMINATED_KEY);
-    // Keep the registry in sync with live agents. v0.1 uses a single
-    // shard; M2c replaces REGISTRY_SHARD_KEY with a tenant-scoped
-    // sharded key. Registration failures are logged but don't fail
-    // the spawn — the registry is a read-side aid, not a source of
-    // truth for lifecycle.
+    // Keep the tenant-scoped registry in sync with live agents.
+    // Registration failures are logged but don't fail the spawn —
+    // the registry is a read-side aid, not a source of truth for
+    // lifecycle.
     try {
-      await this.registryStub().register(config.id, config.domain);
+      await this.registryStub(config.tenantId).register(
+        config.id,
+        config.domain,
+      );
     } catch (err) {
       console.warn(
         `[registry] failed to register ${config.id}: ${(err as Error).message}`,
@@ -212,7 +257,7 @@ export class CfLifecyclePlugin implements LifecyclePlugin {
 
     if (meta) {
       try {
-        await this.registryStub().unregister(meta.id);
+        await this.registryStub(meta.tenantId).unregister(meta.id);
       } catch (err) {
         console.warn(
           `[registry] failed to unregister ${meta.id}: ${(err as Error).message}`,
@@ -244,11 +289,15 @@ export class CfLifecyclePlugin implements LifecyclePlugin {
 
   /** Internal: project AgentMeta → public AgentHandle. */
   private handleFrom(meta: AgentMeta): AgentHandle {
-    return {
+    const handle: AgentHandle = {
       id: meta.id,
       domain: meta.domain,
       status: meta.status,
       spawnedAt: meta.spawnedAt,
     };
+    if (meta.tenantId !== undefined) {
+      handle.tenantId = meta.tenantId;
+    }
+    return handle;
   }
 }

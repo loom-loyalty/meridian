@@ -76,7 +76,7 @@ export interface TransportEnv {
   REGISTRY: DurableObjectNamespace<RegistryDurableObject>;
 }
 
-const REGISTRY_SHARD_KEY = "default";
+const DEFAULT_REGISTRY_SHARD_KEY = "default";
 
 /**
  * Async callback invoked on each received message, after the storage
@@ -99,13 +99,54 @@ export class CfTransportPlugin implements TransportPlugin {
      * present (defineAgent onMessage wired), this fires the hook.
      */
     private readonly onDeliver: DeliverHook | undefined = undefined,
+    /**
+     * Resolver for the sender's own tenantId. Returns `undefined`
+     * when running single-tenant (pre-M6 behavior). When set, every
+     * outgoing send / broadcast scopes target DO names + registry
+     * shard by this tenant, so cross-tenant address resolution is
+     * impossible.
+     */
+    private readonly getTenantId: () => Promise<
+      string | undefined
+    > = async () => undefined,
   ) {}
+
+  /**
+   * Build the name to pass `env.AGENT.idFromName()` for a target
+   * agent in the sender's tenant. Stays unchanged (raw agent id)
+   * when tenancy is off.
+   */
+  private scopedAgentName(
+    agentId: AgentId,
+    tenantId: string | undefined,
+  ): string {
+    return tenantId ? `${tenantId}::${agentId}` : agentId;
+  }
+
+  /**
+   * Registry stub for the sender's tenant-scoped shard. Falls back
+   * to the v0.1 default key when tenancy is off so existing
+   * single-tenant deploys keep their registry DO address.
+   */
+  private registryStub(
+    tenantId: string | undefined,
+  ): DurableObjectStub<RegistryDurableObject> {
+    const key = tenantId
+      ? `${tenantId}::${DEFAULT_REGISTRY_SHARD_KEY}`
+      : DEFAULT_REGISTRY_SHARD_KEY;
+    return this.env.REGISTRY.get(this.env.REGISTRY.idFromName(key));
+  }
 
   async send(toAgentId: AgentId, payload: Uint8Array): Promise<MessageReceipt> {
     this.validatePayload(payload);
     const fromAgentId = await this.getAgentId();
+    const tenantId = await this.getTenantId();
+    // Target DO is scoped by the SENDER'S tenant, which makes
+    // cross-tenant addressing impossible: agent X/A sending to "B"
+    // resolves to tenant X's "B", never tenant Y's "B". Even if the
+    // sender knows another tenant's agent id, they can't reach it.
     const target = this.env.AGENT.get(
-      this.env.AGENT.idFromName(toAgentId),
+      this.env.AGENT.idFromName(this.scopedAgentName(toAgentId, tenantId)),
     ) as unknown as DurableObjectStub<AgentDurableObject>;
     const incoming = await target.deliver(fromAgentId, payload);
     return {
@@ -121,13 +162,12 @@ export class CfTransportPlugin implements TransportPlugin {
     this.validatePayload(payload);
     const fromAgentId = await this.getAgentId();
     const myDomain = await this.getDomain();
+    const tenantId = await this.getTenantId();
 
-    // Registry ONLY tracks registered agents at this point in the
-    // request. Late-spawned agents won't be in the list and therefore
-    // won't receive — matches RUNTIME-SPEC §4.4 semantics.
-    const registry = this.env.REGISTRY.get(
-      this.env.REGISTRY.idFromName(REGISTRY_SHARD_KEY),
-    );
+    // Query the sender's tenant-scoped registry only. Zero
+    // cross-tenant fan-out by construction — another tenant's agents
+    // don't exist in this registry shard.
+    const registry = this.registryStub(tenantId);
     const all = await registry.list();
 
     // Domain filter: if selector.domain is set, require match. If
@@ -158,7 +198,7 @@ export class CfTransportPlugin implements TransportPlugin {
     await Promise.allSettled(
       matched.map(async (agent) => {
         const target = this.env.AGENT.get(
-          this.env.AGENT.idFromName(agent.id),
+          this.env.AGENT.idFromName(this.scopedAgentName(agent.id, tenantId)),
         ) as unknown as DurableObjectStub<AgentDurableObject>;
         try {
           await target.deliver(fromAgentId, payload);

@@ -35,6 +35,22 @@ export type {
 export { enforceBearer } from "./auth.js";
 export type { AuthConfig, BearerAuthConfig } from "./auth.js";
 
+// Tenancy hooks (M6). `TenantAuthorizer` is the adopter seam for
+// multi-tenant deploys — Shuttle implements it against its auth
+// plane; single-tenant adopters leave `tenancy` undefined and get
+// the pre-M6 behavior. `SingleTenantAuthorizer` is exported so
+// adopters wiring a test double / local dev path can reuse it.
+export {
+  SingleTenantAuthorizer,
+  scopedAgentName,
+  scopedRegistryKey,
+} from "./tenancy.js";
+export type {
+  TenancyConfig,
+  TenantAuthorizer,
+  TenantContext,
+} from "./tenancy.js";
+
 // Observability — the one plugin interface we export publicly in
 // v0.1. Adopters swap in OTEL/Datadog/Honeycomb adapters by
 // implementing this interface.
