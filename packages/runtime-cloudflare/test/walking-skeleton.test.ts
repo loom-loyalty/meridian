@@ -1,10 +1,12 @@
 /**
- * M1/M2a walking-skeleton test.
+ * Walking-skeleton test — end-to-end spawn → save → load → send →
+ * receive → terminate against Miniflare via @cloudflare/vitest-pool-workers.
  *
- * Exercises spawn → save → load → send → receive → terminate end-to-end
- * against Miniflare via @cloudflare/vitest-pool-workers. Also covers
- * the M2a additions: SpawnConfig shape, suspend/resume/get/exists, and
- * the idempotence + identity-conflict semantics on the lifecycle.
+ * M2c update: transport RPC renamed from sendTo/deliver/receive to
+ * send/deliver/receiveAll (deliver still exists as the receive-side
+ * RPC, but send is the sender-side call). Mailbox is now
+ * sender-partitioned internally but the external surface is
+ * unchanged at this test level.
  */
 
 import { env } from "cloudflare:test";
@@ -29,7 +31,6 @@ describe("walking skeleton", () => {
     expect(handle1.status).toBe("running");
     expect(typeof handle1.spawnedAt).toBe("number");
 
-    // Re-spawn with the same identity is a no-op (idempotent).
     const handle2 = await a.spawn({
       id: "skeleton-spawn-a",
       domain: "test",
@@ -40,10 +41,6 @@ describe("walking skeleton", () => {
   });
 
   it("rejects spawn where config.id doesn't match the DO name with MRD-CF-LC-005", async () => {
-    // DO binding name is "skeleton-spawn-conflict" but config.id is
-    // "different-agent" — the identity guard prevents an adopter
-    // from spawning DO X under name Y, which would otherwise let
-    // sendTo stamp a forged sender identity.
     const a = stub("skeleton-spawn-conflict");
     await expect(
       a.spawn({ id: "different-agent", domain: "test" }),
@@ -51,8 +48,6 @@ describe("walking skeleton", () => {
   });
 
   it("rejects re-spawn with same id but different domain with MRD-CF-LC-001", async () => {
-    // Identity check passes (config.id == DO name); conflict is on
-    // domain change.
     const a = stub("skeleton-domain-change");
     await a.spawn({ id: "skeleton-domain-change", domain: "infra" });
     await expect(
@@ -79,11 +74,14 @@ describe("walking skeleton", () => {
     await b.spawn({ id: "skeleton-send-b", domain: "test" });
 
     const payload = new TextEncoder().encode("hi there");
-    await a.sendTo("skeleton-send-b", payload);
+    const receipt = await a.send("skeleton-send-b", payload);
+    expect(receipt.messageId).toBeTruthy();
+    expect(typeof receipt.queuedAt).toBe("number");
 
-    const inbox = await b.receive();
+    const inbox = await b.receiveAll();
     expect(inbox).toHaveLength(1);
     expect(inbox[0]?.fromAgentId).toBe("skeleton-send-a");
+    expect(inbox[0]?.toAgentId).toBe("skeleton-send-b");
     expect(new TextDecoder().decode(inbox[0]?.payload)).toBe("hi there");
     expect(typeof inbox[0]?.receivedAt).toBe("number");
 
@@ -91,30 +89,36 @@ describe("walking skeleton", () => {
     await b.terminate();
   });
 
-  it("multiple sends accumulate in the inbox in arrival order", async () => {
+  it("multiple sends preserve per-sender order via sequence numbers", async () => {
     const a = stub("skeleton-order-a");
     const b = stub("skeleton-order-b");
     await a.spawn({ id: "skeleton-order-a", domain: "test" });
     await b.spawn({ id: "skeleton-order-b", domain: "test" });
 
-    await a.sendTo("skeleton-order-b", new TextEncoder().encode("one"));
-    await a.sendTo("skeleton-order-b", new TextEncoder().encode("two"));
-    await a.sendTo("skeleton-order-b", new TextEncoder().encode("three"));
+    await a.send("skeleton-order-b", new TextEncoder().encode("one"));
+    await a.send("skeleton-order-b", new TextEncoder().encode("two"));
+    await a.send("skeleton-order-b", new TextEncoder().encode("three"));
 
-    const inbox = await b.receive();
+    const inbox = await b.receiveAll();
     expect(inbox.map((e) => new TextDecoder().decode(e.payload))).toEqual([
       "one",
       "two",
       "three",
+    ]);
+    // Per-pair sequence numbers are encoded in the messageId.
+    expect(inbox.map((e) => e.messageId)).toEqual([
+      "skeleton-order-a::1",
+      "skeleton-order-a::2",
+      "skeleton-order-a::3",
     ]);
 
     await a.terminate();
     await b.terminate();
   });
 
-  it("sendTo before spawn raises MRD-CF-LC-002", async () => {
+  it("send before spawn raises MRD-CF-LC-002", async () => {
     const orphan = stub("skeleton-orphan");
-    await expect(orphan.sendTo("anyone", new Uint8Array([1]))).rejects.toThrow(
+    await expect(orphan.send("anyone", new Uint8Array([1]))).rejects.toThrow(
       /MRD-CF-LC-002/,
     );
   });
@@ -125,13 +129,13 @@ describe("walking skeleton", () => {
     await a.spawn({ id: "skeleton-term-a", domain: "test" });
     await b.spawn({ id: "skeleton-term-b", domain: "test" });
     await a.save("k", "v");
-    await b.sendTo("skeleton-term-a", new TextEncoder().encode("ping"));
+    await b.send("skeleton-term-a", new TextEncoder().encode("ping"));
 
     await a.terminate();
 
     expect(await a.exists()).toBe(false);
     expect(await a.load("k")).toBeUndefined();
-    expect(await a.receive()).toEqual([]);
+    expect(await a.receiveAll()).toEqual([]);
 
     await b.terminate();
   });
