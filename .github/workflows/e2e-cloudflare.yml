@@ -118,7 +118,7 @@ jobs:
             CODE=$(echo "$RESPONSE" | tail -n 1)
             if [ "$CODE" = "200" ]; then
               echo "Smoke OK (attempt $i): body=$BODY"
-              echo "$BODY" | jq -e '.runtime == "meridian-cloudflare" and .milestone == "m1-walking-skeleton"'
+              echo "$BODY" | jq -e '.runtime == "meridian-cloudflare" and .healthy == true'
               break
             fi
             echo "Attempt $i: HTTP $CODE; retrying in 5s..."

@@ -24,7 +24,10 @@ export { RegistryDurableObject } from "./registry-do.js";
 export type { RegistryEnv } from "./registry-do.js";
 
 export { createMeridianWorker } from "./create-meridian-worker.js";
-export type { MeridianWorkerConfig } from "./create-meridian-worker.js";
+export type {
+  MeridianWorkerConfig,
+  MeridianRouteHandler,
+} from "./create-meridian-worker.js";
 
 // Observability — the one plugin interface we export publicly in
 // v0.1. Adopters swap in OTEL/Datadog/Honeycomb adapters by
@@ -44,5 +47,11 @@ export type {
 // Error catalog — adopters pattern-match on MRD-\* codes from
 // RuntimeError.context.code. Code catalog is stable within a major
 // version (DX review decision, 2026-04-21).
-export { meridianError, isMeridianError, errorCode } from "./errors.js";
+export {
+  meridianError,
+  isMeridianError,
+  errorCode,
+  lookupMeridianCode,
+  MERIDIAN_ERROR_CODE_RE,
+} from "./errors.js";
 export type { MeridianErrorCode } from "./errors.js";

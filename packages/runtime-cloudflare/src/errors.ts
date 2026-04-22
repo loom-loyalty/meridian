@@ -235,6 +235,38 @@ export function isMeridianError(err: unknown): err is RuntimeError {
   );
 }
 
+/**
+ * Look up a MRD-CF-* code's category + retryable + docUrl without
+ * throwing. Useful when reconstructing Meridian-specific error
+ * responses from a plain `Error` whose class identity was stripped
+ * by the DO RPC boundary (Workers structured clone reconstructs
+ * thrown errors as plain `Error`, so `instanceof RuntimeError` fails
+ * on the caller side even when the thrown value was originally one).
+ */
+export function lookupMeridianCode(code: string): {
+  code: MeridianErrorCode;
+  category: ErrorCategory;
+  retryable: boolean;
+  docUrl: string;
+} | null {
+  if (!(code in CATALOG)) return null;
+  const spec = CATALOG[code as MeridianErrorCode];
+  return {
+    code: code as MeridianErrorCode,
+    category: spec.category,
+    retryable: spec.retryable,
+    docUrl: `${DOC_BASE_URL}${code}`,
+  };
+}
+
+/**
+ * Regex that matches the `[MRD-CF-XX-NNN]` prefix every
+ * `meridianError()` throw carries. Exported so adopters can detect
+ * Meridian errors in the caller-side view after DO RPC has stripped
+ * the class identity.
+ */
+export const MERIDIAN_ERROR_CODE_RE = /\[(MRD-CF-[A-Z]{2}-\d{3})\]/;
+
 /** Pull the catalog code off a Meridian error, or undefined. */
 export function errorCode(err: unknown): MeridianErrorCode | undefined {
   if (isMeridianError(err) && typeof err.context?.code === "string") {

@@ -1,19 +1,22 @@
 /**
  * Test harness Worker entry.
  *
- * Miniflare needs a Worker module to boot the DO isolates. Tests exercise
- * the DOs via RPC directly; this fetch handler is intentionally small.
- * Adopters write their own `worker.ts` and bind their agent specs via
- * `createMeridianWorker()`.
+ * Miniflare needs a Worker module to boot the DO isolates. We wire
+ * the adopter-facing `createMeridianWorker` helper with a custom
+ * `/conformance` route so the E2E workflow can drive the suite on
+ * real CF. This also eats our own dogfood: if the helper regresses,
+ * the entire test harness stops working, which the walking-skeleton
+ * + worker-routes tests catch fast.
  *
- * Two routes:
- *   • `GET /` — smoke-check payload the e2e-cloudflare workflow asserts
- *     on. Keep the `.runtime` and `.milestone` fields stable; adding
- *     fields is fine.
- *   • `GET /conformance` — runs the runtime conformance suite
- *     in-Worker (scenarios with `appliesTo` including `"real-cf"`) and
- *     returns `{summary, results}` as JSON. The E2E workflow asserts
- *     `summary.failed === 0`.
+ * Three routes active here:
+ *   • `GET /`                             — healthy status (helper built-in)
+ *   • `GET /.well-known/agent-card.json`  — discovery (helper built-in)
+ *   • `GET /conformance?offset&limit`     — custom route running the
+ *                                           runtime conformance suite
+ *                                           against the live deploy
+ *
+ * All other adopter-facing built-ins (`/agents/*`) are available
+ * too — the Miniflare tests for those live in `worker-routes.test.ts`.
  */
 
 import {
@@ -23,6 +26,8 @@ import {
   type AgentRef,
   type Runtime,
 } from "@loom-loyalty/meridian-conformance/runtime";
+
+import { createMeridianWorker } from "../src/create-meridian-worker.js";
 
 export { AgentDurableObject } from "../src/agent-do.js";
 export { RegistryDurableObject } from "../src/registry-do.js";
@@ -82,11 +87,18 @@ function realCfRuntime(env: TestHarnessEnv): Runtime {
   };
 }
 
-export default {
-  async fetch(req: Request, env: TestHarnessEnv): Promise<Response> {
-    const url = new URL(req.url);
-
-    if (url.pathname === "/conformance") {
+export default createMeridianWorker({
+  // No adopter-provided agents in the test harness. Scenarios spawn
+  // agents dynamically via the Runtime abstraction; the harness just
+  // needs DO bindings + the /conformance route.
+  agents: [],
+  agentCard: {
+    name: "meridian-runtime-cloudflare-ci",
+    description: "E2E harness for the Meridian CF runtime adapter",
+  },
+  routes: {
+    "GET /conformance": async (req, env) => {
+      const url = new URL(req.url);
       // Batching support: the suite runs ~31 scenarios serially, each
       // of which hits 5-25 DO RPCs. Cold-start DOs + serial RPC cost
       // pushes the whole suite over the ~30s Worker CPU budget on
@@ -102,7 +114,10 @@ export default {
           : runtimeScenarios.length;
       const window = runtimeScenarios.slice(offset, windowEnd);
 
-      const results = await runRuntimeConformance(realCfRuntime(env), window);
+      const results = await runRuntimeConformance(
+        realCfRuntime(env as TestHarnessEnv),
+        window,
+      );
       const summary = summarizeConformance(results);
       return new Response(
         JSON.stringify(
@@ -121,16 +136,6 @@ export default {
           headers: { "content-type": "application/json" },
         },
       );
-    }
-
-    const body = {
-      runtime: "meridian-cloudflare",
-      milestone: "m1-walking-skeleton",
-      healthy: true,
-    };
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    },
   },
-};
+});
