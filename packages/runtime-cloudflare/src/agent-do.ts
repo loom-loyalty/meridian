@@ -9,6 +9,14 @@
  * the `AgentSpec` registered via `defineAgent()` at the right
  * points (post-spawn, post-deliver, pre-terminate).
  *
+ * Every RPC method body wraps in `logRpcError` so any throw is
+ * `console.error`-logged with the real constructor / code / stack
+ * BEFORE the exception crosses the Workers RPC boundary. Cloudflare
+ * collapses non-standard throws to `"internal error; reference=XXX"`
+ * at the caller and drops the DO-side frames; without this wrapper,
+ * a real-CF flake surface is opaque. With it, `wrangler tail` and
+ * Workers Logs capture the originating stack.
+ *
  * Primitives implemented in M2c:
  *   • Lifecycle — spawn / suspend / resume / terminate / get / exists
  *                 (+ snapshotState @experimental → UNAVAILABLE,
@@ -43,6 +51,7 @@ import type {
 
 import { getAgentSpec, type AgentContext } from "./define-agent.js";
 import { meridianError } from "./errors.js";
+import { logRpcError } from "./log-rpc-error.js";
 import {
   CloudflareAnalyticsPlugin,
   CloudflareLogsPlugin,
@@ -128,67 +137,73 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
    * adopters don't need to poll `drainFiredSchedules`.
    */
   async alarm(): Promise<void> {
-    await this.scheduling.onAlarm();
-    await this.invokeOnScheduleForFires();
+    return logRpcError("alarm", async () => {
+      await this.scheduling.onAlarm();
+      await this.invokeOnScheduleForFires();
+    });
   }
 
   // ── Lifecycle ────────────────────────────────────────────
 
   async spawn(config: SpawnConfig): Promise<AgentHandle> {
-    const handle = await this.lifecycle.spawn(config);
-    // Fire the adopter's onSpawn hook if defined. Errors don't fail
-    // the spawn (the DO is already persisted); they're surfaced
-    // via `meridian.hook.errors` metric + structured error log.
-    const spec = getAgentSpec(handle.id);
-    if (spec?.onSpawn) {
-      try {
-        await spec.onSpawn(this.contextFor(handle));
-      } catch (err) {
-        this.emitHookError("onSpawn", handle, err as Error);
+    return logRpcError("spawn", async () => {
+      const handle = await this.lifecycle.spawn(config);
+      // Fire the adopter's onSpawn hook if defined. Errors don't fail
+      // the spawn (the DO is already persisted); they're surfaced
+      // via `meridian.hook.errors` metric + structured error log.
+      const spec = getAgentSpec(handle.id);
+      if (spec?.onSpawn) {
+        try {
+          await spec.onSpawn(this.contextFor(handle));
+        } catch (err) {
+          this.emitHookError("onSpawn", handle, err as Error);
+        }
       }
-    }
-    return handle;
+      return handle;
+    });
   }
 
   async suspend(): Promise<void> {
-    return this.lifecycle.suspend();
+    return logRpcError("suspend", () => this.lifecycle.suspend());
   }
 
   async resume(): Promise<void> {
-    return this.lifecycle.resume();
+    return logRpcError("resume", () => this.lifecycle.resume());
   }
 
   async terminate(): Promise<void> {
-    // Fire the adopter's onTerminate hook BEFORE wiping so they
-    // still have access to state.load / transport / etc. If the
-    // hook throws, we emit via the hook-error surface and proceed
-    // with termination anyway — a stuck hook should not prevent
-    // deletion.
-    const exists = await this.lifecycle.exists();
-    if (exists) {
-      const handle = await this.lifecycle.get();
-      const spec = getAgentSpec(handle.id);
-      if (spec?.onTerminate) {
-        try {
-          await spec.onTerminate(this.contextFor(handle));
-        } catch (err) {
-          this.emitHookError("onTerminate", handle, err as Error);
+    return logRpcError("terminate", async () => {
+      // Fire the adopter's onTerminate hook BEFORE wiping so they
+      // still have access to state.load / transport / etc. If the
+      // hook throws, we emit via the hook-error surface and proceed
+      // with termination anyway — a stuck hook should not prevent
+      // deletion.
+      const exists = await this.lifecycle.exists();
+      if (exists) {
+        const handle = await this.lifecycle.get();
+        const spec = getAgentSpec(handle.id);
+        if (spec?.onTerminate) {
+          try {
+            await spec.onTerminate(this.contextFor(handle));
+          } catch (err) {
+            this.emitHookError("onTerminate", handle, err as Error);
+          }
         }
       }
-    }
-    return this.lifecycle.terminate();
+      return this.lifecycle.terminate();
+    });
   }
 
   async get(): Promise<AgentHandle> {
-    return this.lifecycle.get();
+    return logRpcError("get", () => this.lifecycle.get());
   }
 
   async exists(): Promise<boolean> {
-    return this.lifecycle.exists();
+    return logRpcError("exists", () => this.lifecycle.exists());
   }
 
   async snapshotState(): Promise<never> {
-    return this.lifecycle.snapshotState();
+    return logRpcError("snapshotState", () => this.lifecycle.snapshotState());
   }
 
   // ── State ────────────────────────────────────────────────
@@ -203,23 +218,31 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   // surfaced (pre-spawn `save` resolved on CF but threw on in-memory).
 
   async save(key: string, value: unknown): Promise<void> {
-    await this.lifecycle.requireMeta();
-    return this.state.save(key, value);
+    return logRpcError("save", async () => {
+      await this.lifecycle.requireMeta();
+      return this.state.save(key, value);
+    });
   }
 
   async load<T = unknown>(key: string): Promise<T | undefined> {
-    await this.lifecycle.requireMeta();
-    return this.state.load<T>(key);
+    return logRpcError("load", async () => {
+      await this.lifecycle.requireMeta();
+      return this.state.load<T>(key);
+    });
   }
 
   async delete(key: string): Promise<void> {
-    await this.lifecycle.requireMeta();
-    return this.state.delete(key);
+    return logRpcError("delete", async () => {
+      await this.lifecycle.requireMeta();
+      return this.state.delete(key);
+    });
   }
 
   async list(opts?: ListOptions): Promise<ListResult> {
-    await this.lifecycle.requireMeta();
-    return this.state.list(opts);
+    return logRpcError("list", async () => {
+      await this.lifecycle.requireMeta();
+      return this.state.list(opts);
+    });
   }
 
   /**
@@ -229,49 +252,65 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
    * functions across DO boundaries).
    */
   async incrementAtomic(key: string, delta = 1): Promise<number> {
-    await this.lifecycle.requireMeta();
-    return this.state.update<number>(key, (c) => (c ?? 0) + delta);
+    return logRpcError("incrementAtomic", async () => {
+      await this.lifecycle.requireMeta();
+      return this.state.update<number>(key, (c) => (c ?? 0) + delta);
+    });
   }
 
   // ── Scheduling ───────────────────────────────────────────
 
   async scheduleAt(when: Timestamp, payload?: unknown): Promise<ScheduleId> {
-    await this.lifecycle.requireMeta();
-    return this.scheduling.scheduleAt(when, payload);
+    return logRpcError("scheduleAt", async () => {
+      await this.lifecycle.requireMeta();
+      return this.scheduling.scheduleAt(when, payload);
+    });
   }
 
   async scheduleCron(cron: string, payload?: unknown): Promise<ScheduleId> {
-    await this.lifecycle.requireMeta();
-    return this.scheduling.scheduleCron(cron, payload);
+    return logRpcError("scheduleCron", async () => {
+      await this.lifecycle.requireMeta();
+      return this.scheduling.scheduleCron(cron, payload);
+    });
   }
 
   async cancelSchedule(scheduleId: ScheduleId): Promise<void> {
-    await this.lifecycle.requireMeta();
-    return this.scheduling.cancel(scheduleId);
+    return logRpcError("cancelSchedule", async () => {
+      await this.lifecycle.requireMeta();
+      return this.scheduling.cancel(scheduleId);
+    });
   }
 
   async listSchedules(): Promise<ScheduleInfo[]> {
-    await this.lifecycle.requireMeta();
-    return this.scheduling.listSchedules();
+    return logRpcError("listSchedules", async () => {
+      await this.lifecycle.requireMeta();
+      return this.scheduling.listSchedules();
+    });
   }
 
   async drainFiredSchedules(): Promise<FiredSchedule[]> {
-    return this.scheduling.drainFiredSchedules();
+    return logRpcError("drainFiredSchedules", () =>
+      this.scheduling.drainFiredSchedules(),
+    );
   }
 
   // ── Transport ────────────────────────────────────────────
 
   async send(toAgentId: AgentId, payload: Uint8Array): Promise<MessageReceipt> {
-    await this.lifecycle.requireMeta();
-    return this.transport.send(toAgentId, payload);
+    return logRpcError("send", async () => {
+      await this.lifecycle.requireMeta();
+      return this.transport.send(toAgentId, payload);
+    });
   }
 
   async broadcast(
     selector: AgentSelector,
     payload: Uint8Array,
   ): Promise<BroadcastReceipt> {
-    await this.lifecycle.requireMeta();
-    return this.transport.broadcast(selector, payload);
+    return logRpcError("broadcast", async () => {
+      await this.lifecycle.requireMeta();
+      return this.transport.broadcast(selector, payload);
+    });
   }
 
   /**
@@ -284,52 +323,68 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     fromAgentId: AgentId,
     payload: Uint8Array,
   ): Promise<IncomingMessage> {
-    return this.transport.deliver(fromAgentId, payload);
+    return logRpcError("deliver", () =>
+      this.transport.deliver(fromAgentId, payload),
+    );
   }
 
   /** Snapshot the inbox (does NOT clear). */
   async receiveAll(): Promise<IncomingMessage[]> {
-    await this.lifecycle.requireMeta();
-    return this.transport.receiveAll();
+    return logRpcError("receiveAll", async () => {
+      await this.lifecycle.requireMeta();
+      return this.transport.receiveAll();
+    });
   }
 
   /** Pull-and-clear the inbox. Stable public API. */
   async drainInbox(): Promise<IncomingMessage[]> {
-    await this.lifecycle.requireMeta();
-    return this.transport.drainAll();
+    return logRpcError("drainInbox", async () => {
+      await this.lifecycle.requireMeta();
+      return this.transport.drainAll();
+    });
   }
 
   // ── Resources (RPC surface) ──────────────────────────────
 
   async setLimits(limits: ResourceLimits): Promise<void> {
-    await this.lifecycle.requireMeta();
-    return this.resources.setLimits(limits);
+    return logRpcError("setLimits", async () => {
+      await this.lifecycle.requireMeta();
+      return this.resources.setLimits(limits);
+    });
   }
 
   async getLimits(): Promise<ResourceLimits> {
-    await this.lifecycle.requireMeta();
-    return this.resources.getLimits();
+    return logRpcError("getLimits", async () => {
+      await this.lifecycle.requireMeta();
+      return this.resources.getLimits();
+    });
   }
 
   async getUsage(): Promise<ResourceUsage> {
-    await this.lifecycle.requireMeta();
-    return this.resources.getUsage();
+    return logRpcError("getUsage", async () => {
+      await this.lifecycle.requireMeta();
+      return this.resources.getUsage();
+    });
   }
 
   async reportTokens(
     n: number,
     attribution?: { workItemId?: string },
   ): Promise<void> {
-    await this.lifecycle.requireMeta();
-    return this.resources.reportTokens(n, attribution);
+    return logRpcError("reportTokens", async () => {
+      await this.lifecycle.requireMeta();
+      return this.resources.reportTokens(n, attribution);
+    });
   }
 
   async reportCost(
     usd: number,
     attribution?: { workItemId?: string },
   ): Promise<void> {
-    await this.lifecycle.requireMeta();
-    return this.resources.reportCost(usd, attribution);
+    return logRpcError("reportCost", async () => {
+      await this.lifecycle.requireMeta();
+      return this.resources.reportCost(usd, attribution);
+    });
   }
 
   /**
@@ -340,18 +395,24 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   async getUsageByWorkItem(
     workItemId?: string,
   ): Promise<Array<{ workItemId: string; tokens: number; costUsd: number }>> {
-    await this.lifecycle.requireMeta();
-    return this.resources.getUsageByWorkItem(workItemId);
+    return logRpcError("getUsageByWorkItem", async () => {
+      await this.lifecycle.requireMeta();
+      return this.resources.getUsageByWorkItem(workItemId);
+    });
   }
 
   // ── @experimental — permissions throw UNAVAILABLE ────────
 
   async setPermissions(): Promise<never> {
-    throw meridianError("MRD-CF-EX-004");
+    return logRpcError("setPermissions", async () => {
+      throw meridianError("MRD-CF-EX-004");
+    });
   }
 
   async getPermissions(): Promise<never> {
-    throw meridianError("MRD-CF-EX-005");
+    return logRpcError("getPermissions", async () => {
+      throw meridianError("MRD-CF-EX-005");
+    });
   }
 
   // ── Internal: hook wiring ────────────────────────────────

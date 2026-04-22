@@ -22,3 +22,14 @@ class_name = "RegistryDurableObject"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AgentDurableObject", "RegistryDurableObject"]
+
+# Workers Observability — enables persistent, non-sampled logs in the
+# Cloudflare dashboard so real-CF flakes are diagnosable after
+# teardown. Without this, the dashboard shows only aggregate metrics
+# and `wrangler tail` is our only log surface (which samples under
+# load). 100% head sampling means every request's logs + exceptions
+# are retained for ~3 days. For adopters on high-volume deployments,
+# lower `head_sampling_rate` to e.g. 0.1 once past v0.1 validation.
+[observability]
+enabled = true
+head_sampling_rate = 1.0
