@@ -1,5 +1,355 @@
 # @loom-loyalty/meridian-runtime-cloudflare
 
+## 0.6.0
+
+### Minor Changes
+
+- 81a0e39: M4a: Shared-secret bearer auth for `createMeridianWorker`.
+
+  Before this, the worker was fully open — anyone who guessed the URL
+  could spawn agents, send messages, terminate. The M3 examples
+  warned adopters to keep the URL private; now the runtime can
+  enforce auth itself.
+
+  **Adopter API**
+
+  ```ts
+  createMeridianWorker({
+    agents: [...],
+    auth: { bearer: env.MERIDIAN_ADMIN_TOKEN },
+  });
+  ```
+
+  When `auth.bearer` is set, every mutation route on the built-in
+  surface (`POST /agents/:id/spawn`, `DELETE /agents/:id`,
+  `POST /agents/:id/messages`, `POST /agents/:id/broadcast`,
+  `POST /agents/:id/inbox/drain`) requires
+  `Authorization: Bearer <token>` or rejects with a `MRD-CF-AU-*`
+  code. Reads (`GET /`, `GET /.well-known/agent-card.json`,
+  `GET /agents/:id`, `GET /agents/:id/inbox`) stay open — discovery
+  and polling don't need a secret.
+
+  When `auth.bearer` is absent or empty, the worker stays open (same
+  behavior as before M4a). Adopters running publicly MUST configure
+  auth or restrict via Cloudflare Access / private URL.
+
+  Custom routes (passed via `config.routes`) are NOT auto-gated —
+  adopters call `enforceBearer(req, config.auth)` explicitly at the
+  top of any handler that needs it. Keeps public custom endpoints
+  (`/conformance`, `/healthz`) working without reconfiguration.
+
+  **AgentCard `securitySchemes`**
+
+  `GET /.well-known/agent-card.json` now populates `securitySchemes`
+  when auth is enabled:
+
+  ```json
+  {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Shared-secret bearer token. ..."
+      }
+    }
+  }
+  ```
+
+  A2A-aware clients can discover the required scheme without a
+  separate probe. An empty `securitySchemes: {}` object is now an
+  explicit signal that the worker is open — adopters who forgot to
+  configure auth see this on their smoke check.
+
+  **New error codes (MRD-CF-AU-\*)**
+
+  All three map to HTTP 401 with `category: "unauthenticated"`.
+  - `MRD-CF-AU-001` — no Authorization header on a gated route
+  - `MRD-CF-AU-002` — Bearer token doesn't match the configured secret
+  - `MRD-CF-AU-003` — Authorization header uses a non-Bearer scheme
+
+  Token comparison is constant-time (XOR accumulation over UTF-8 bytes)
+  so timing attacks against the secret don't work by default.
+
+  **New exports**
+
+  From `@loom-loyalty/meridian-runtime-cloudflare`:
+  - `enforceBearer(req, config.auth)` — call from custom route handlers
+    to gate them the same way built-ins are gated
+  - `AuthConfig`, `BearerAuthConfig` types
+
+  **Types-package update**
+
+  `ErrorCategory` gains `"unauthenticated"` (minor bump).
+  Pre-existing `permission_denied` stays for authorization failures
+  (AuthZ, not AuthN); the new category covers `no-valid-credential`
+  paths. Matches gRPC status-code conventions.
+
+  **Test totals**
+  - `runtime-cloudflare`: 105 → 114 tests green (+9 auth tests covering
+    missing header, wrong scheme, wrong token, correct token accepted,
+    constant-time byte-level rejection, empty-bearer = disabled,
+    AgentCard securitySchemes in both modes, read routes stay open).
+
+  **v0.1 scope gates**
+  - Only shared-secret bearer. OIDC / OAuth2 / custom `AuthPlugin`
+    interface lands in v0.1.5 when a real second implementation
+    stabilizes the interface (eng-review decision 2026-04-21).
+  - No WebSocket transport auth yet. Current worker has no WebSocket
+    endpoint (/admin/tail WebSocket lands in M4b alongside admin
+    routes).
+
+  **Next**
+  - M4b: admin routes (`/admin/agents/:id/inspect`, `/admin/domains`,
+    `/admin/domains/:id/queue`) — all bearer-gated via the same
+    helper.
+  - M4c: `packages/meridian-cli` — `meridian init/gen-token/demo/doctor`
+    - admin clients (`inspect/tail/queue/domains`) with token handling.
+
+- 41fef1d: M4b: Admin routes for `createMeridianWorker`.
+
+  Adds two read-only operational endpoints adopters (and the upcoming
+  `meridian` CLI) can call to introspect a live runtime without
+  cracking open the Durable Object internals themselves.
+
+  **New routes**
+
+  ```
+  GET /admin/domains           → list registered agents grouped by domain
+  GET /admin/agents/:id        → unified inspect: handle + schedules +
+                                  usage + state keys + inbox length
+  ```
+
+  Every admin route is gated by bearer auth when `config.auth.bearer`
+  is set. Unlike the `/agents/*` surface, admin reads are gated too —
+  enumerating the registry / draining state keys is operationally
+  sensitive enough that leaving it open without a token would surprise
+  adopters.
+
+  **Response shapes**
+
+  ```jsonc
+  // GET /admin/domains
+  {
+    "domains": [
+      { "domain": "adm-x", "agentIds": ["a", "b"] },
+      { "domain": "adm-y", "agentIds": ["c"] },
+    ],
+  }
+  ```
+
+  Domains and `agentIds` are sorted alphabetically so the response is
+  deterministic.
+
+  ```jsonc
+  // GET /admin/agents/:id
+  {
+    "agent": {
+      "id": "...",
+      "domain": "...",
+      "status": "running",
+      "spawnedAt": 1234567890,
+    },
+    "schedules": [
+      /* ScheduleInfo[] */
+    ],
+    "usage": {
+      "limits": {
+        /* ResourceLimits */
+      },
+      "current": {
+        "memoryMB": 0,
+        "cpuMsLifetime": 0,
+        "tokensLifetime": 0,
+        "costUsdLifetime": 0,
+        "activeOperations": 0,
+      },
+      "warnings": [],
+    },
+    "state": {
+      "keys": [
+        /* string[] */
+      ],
+      "cursor": "...", // optional, for pagination
+    },
+    "inbox": { "length": 3 },
+  }
+  ```
+
+  Pre-spawn inspect returns HTTP 404 with `MRD-CF-LC-002`.
+
+  **Error mapping**
+  - Unknown `/admin/*` path → 404
+  - Non-GET on a known admin path → 405 with `Allow: GET`
+  - Auth configured but missing header → 401 `MRD-CF-AU-001`
+  - Wrong bearer token → 401 `MRD-CF-AU-002`
+
+  **Test totals**
+  - `runtime-cloudflare`: 114 → 123 tests green (+9 admin tests covering
+    domain grouping + sort contract, inspect payload shape, pre-spawn
+    404, unknown admin path, 405 on non-GET, bearer required + wrong
+    token paths).
+
+  **v0.1 scope gates**
+  - Read-only. No spawn / terminate / send on the admin surface —
+    those stay on `/agents/*` where adopters already drive them.
+  - Single-registry-shard lookup for `/admin/domains`. When the sharded
+    registry lands in M6, the fan-out across all 16 shards is additive
+    (same response shape, more internal subrequests).
+  - `/admin/domains/:id/queue` and `/admin/tail` (WebSocket) stay on
+    the roadmap for M4c / post-M4; the shape above is minimal-viable
+    for the CLI's `inspect` and `domains` commands.
+
+  **Next**
+  - M4c: `packages/meridian-cli` — `meridian init/gen-token/demo/doctor`
+    plus admin clients (`inspect/tail/queue/domains`) that hit these
+    routes with the configured `MERIDIAN_ADMIN_TOKEN`.
+
+- ab88293: M6: Opt-in multi-tenancy for `createMeridianWorker`.
+
+  Adopters can now run one Meridian runtime across multiple tenants
+  without forking. Tenancy is **off by default** — existing deploys
+  upgrading from M5 see no change to their DO addresses, registry
+  keys, or `AgentHandle` shape. Multi-tenant adopters (Shuttle and
+  similar) opt in by providing a `TenantAuthorizer`.
+
+  **Adopter API**
+
+  ```ts
+  import {
+    createMeridianWorker,
+    type TenantAuthorizer,
+  } from "@loom-loyalty/meridian-runtime-cloudflare";
+
+  class JwtTenantAuthorizer implements TenantAuthorizer {
+    async resolveTenantId(req: Request): Promise<string> {
+      const { tid } = await verifyJwt(req);
+      return tid;
+    }
+  }
+
+  export default createMeridianWorker({
+    agents: [...],
+    tenancy: { authorizer: new JwtTenantAuthorizer() },
+  });
+  ```
+
+  **Server-enforced isolation invariants (tenancy on)**
+  1. **DO namespacing** — `env.AGENT.idFromName("${tenantId}::${agentId}")`.
+     Same agentId under two tenants maps to two distinct DOs with
+     their own SQLite, alarms, inbox.
+  2. **Registry scoping** — each tenant gets its own RegistryDO shard
+     keyed `${tenantId}::default`. `registry.list()` has zero
+     cross-tenant leakage by construction.
+  3. **Cross-agent send containment** — when agent A sends to "B",
+     the target DO is resolved under A's own tenantId (stored in meta
+     at spawn). Sending into another tenant's namespace is impossible.
+  4. **Broadcast containment** — broadcasts query only the sender's
+     tenant-scoped registry shard.
+  5. **Admin route scoping** — `GET /admin/domains` and
+     `GET /admin/agents/:id` call the authorizer before reading. A
+     tenant-B caller asking about tenant-A's agent gets 404
+     `MRD-CF-LC-002`.
+  6. **Spawn body cannot spoof tenant** — the worker forces the
+     authorizer-resolved `tenantId` onto the spawn config.
+  7. **Handle carries `tenantId`** — `AgentHandle` responses from a
+     tenant-aware worker include `tenantId`; single-tenant handles
+     omit it.
+
+  **Types-package update**
+  - `SpawnConfig.tenantId?: string` — optional, additive
+  - `AgentHandle.tenantId?: string` — optional, additive (absent on
+    single-tenant runtimes, present on multi-tenant)
+
+  **New exports from `@loom-loyalty/meridian-runtime-cloudflare`**
+  - `TenantAuthorizer` interface
+  - `SingleTenantAuthorizer` — default (returns `"default"`)
+  - `TenancyConfig`, `TenantContext` types
+  - `scopedAgentName(agentId, tenant)` — exposed for adopters who
+    need to compute DO names outside the built-in routes
+  - `scopedRegistryKey(tenant)` — exposed for the same reason
+
+  **Backward compatibility**
+
+  Single-tenant mode is bit-for-bit identical to M5. When `tenancy`
+  is undefined:
+  - DO names stay `env.AGENT.idFromName(agentId)` — no prefix
+  - Registry shard stays `"default"`
+  - `AgentMeta` omits `tenantId`
+  - `AgentHandle` omits `tenantId`
+
+  No migration needed for existing adopter deploys.
+
+  **Test totals**
+  - `runtime-cloudflare`: 123 → 129 tests green (+6 tenancy tests
+    covering DO namespace isolation, admin `/domains` per-tenant
+    listing, cross-tenant inspect returns 404, `tenantId` on handles,
+    single-tenant fallback, `SingleTenantAuthorizer` stub behavior).
+
+  **v0.1 scope gates (deferred to v0.1.5)**
+  - `TenantLimits.maxCostUsd` aggregate caps across agents in a
+    tenant — per-agent `ResourceLimits` still enforced today
+  - Analytics Engine `meridian.tenant_id` dimension tag on metrics
+    (plumbed through `obs.metric` tags, but not auto-tagged per
+    request yet — adopters can add it manually via the adopter-facing
+    `AgentContext.obs.metric` tag arg)
+  - Tenant provisioning flow, cross-region routing, spawn-bomb rate
+    limiting — Shuttle (multi-tenant operator) territory
+
+### Patch Changes
+
+- 0c8d075: M5: E2E CI hardening + verified-on-CF badge.
+
+  **New conformance scenario**
+
+  `concurrency-spawn-broadcast-fanout` — spawns N=12 agents in the same
+  domain in parallel, has each broadcast once, then asserts every
+  recipient's inbox ends with exactly N-1 messages (excludes sender).
+
+  Exercises RegistryDO + mailbox DO concurrency under load that no
+  existing scenario touches — every previous scenario uses a small
+  fixed set of agents. Applies to all three runtime kinds
+  (`in-memory`, `miniflare`, `real-cf`) so divergence between them
+  shows up as a red build on the parity test.
+
+  The N=12 fan-out runs ~48 DO RPCs per scenario. Picked to be
+  meaningful without overrunning the ~30s real-CF Worker CPU budget
+  under the batched `/conformance` pager.
+
+  **Verified-on-CF badge**
+
+  Root `README.md` now carries `E2E (Cloudflare)` and `CI` badges. The
+  E2E badge tracks
+  `.github/workflows/e2e-cloudflare.yml` on `main` — green means the
+  full runtime conformance suite (including the new M5 fan-out
+  scenario) ran against a real Cloudflare Workers deployment on the
+  latest push, not a Miniflare emulator.
+
+  **Packages table refresh**
+
+  Every package previously listed under "Roadmap" has shipped. Table
+  now reflects what's on npm + links the `meridian-cli` scaffolder.
+  Only `@loom-loyalty/meridian-proxy` remains on the roadmap for v1.0.
+
+  **DEPLOY-CI.md refresh**
+
+  Documents what the E2E workflow covers today — deploy, smoke probe,
+  batched conformance runner, `wrangler tail` capture on failure,
+  conditional teardown. Removes the "what grows in M2" section (all
+  of that has since landed).
+
+  **Test totals**
+  - `runtime-cloudflare`: 123 → 123 tests green (conformance scenario
+    count goes 31 → 32, but the outer test file already runs the full
+    `runtimeScenarios` export — no new `it()` block needed).
+  - `conformance` suite now publishes 32 scenarios total (31 prior +
+    1 new concurrency scenario).
+
+- Updated dependencies [81a0e39]
+- Updated dependencies [0c8d075]
+- Updated dependencies [ab88293]
+  - @loom-loyalty/meridian-types@0.4.0
+  - @loom-loyalty/meridian-conformance@0.3.0
+
 ## 0.5.0
 
 ### Minor Changes

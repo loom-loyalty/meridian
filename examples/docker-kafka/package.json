@@ -1,7 +1,7 @@
 {
   "name": "@meridian/example-docker-kafka",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "External Meridian agent example: Kafka consumer-lag monitor running in a Docker sidecar, talking to a Meridian worker over HTTP",
   "type": "module",
   "scripts": {
