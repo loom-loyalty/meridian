@@ -135,49 +135,113 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
-          # Start `wrangler tail` in the background to capture DO-side
-          # logs + exception stacks while /conformance runs. Without
-          # this, Cloudflare wraps DO errors as "internal error;
-          # reference=XXX" at the RPC boundary and the real stack is
-          # invisible. Tail streams JSON lines per request; we redirect
-          # to a file and print it if any scenario fails.
-          pnpm wrangler tail --name "$WORKER_NAME" --format json > tail.log 2>&1 &
+          # Start `wrangler tail` in the background so DO-side console
+          # output (logs + exception stacks) lands in the workflow log
+          # for any failing batch. `wrangler tail` takes the worker
+          # name as a positional, not a flag. Output to a file so we
+          # can print it AFTER all batches run.
+          pnpm wrangler tail "$WORKER_NAME" --format json > tail.log 2>&1 &
           TAIL_PID=$!
-          # Give tail a moment to connect before issuing the request.
           sleep 3
 
-          # Longer max-time: the suite spawns / terminates ~30 agents
-          # serially. Any one scenario that hits a cold DO adds a few
-          # hundred ms.
-          RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 120 "$URL/conformance" || true)
-          BODY=$(echo "$RESPONSE" | head -n -1)
-          CODE=$(echo "$RESPONSE" | tail -n 1)
-          echo "Conformance HTTP $CODE"
-          echo "$BODY" | jq '.summary' || echo "$BODY"
+          # Batched conformance: each /conformance?offset=N&limit=M
+          # Worker invocation runs a subset of the suite. Keeps each
+          # invocation well under the ~30s Worker CPU budget. Page size
+          # 8 is comfortably safe for the longest-running scenarios
+          # (errors-codes-reachable does ~26 DO RPCs).
+          PAGE_SIZE=8
+          TOTAL=$(curl -sS --max-time 30 "$URL/conformance?offset=0&limit=0" \
+            | jq -r '.total' 2>/dev/null || echo "")
+          if [ -z "$TOTAL" ] || [ "$TOTAL" = "null" ]; then
+            echo "::error::Could not determine scenario total from /conformance?limit=0"
+            curl -sS --max-time 30 "$URL/conformance?offset=0&limit=0" | head -20
+            exit 1
+          fi
+          echo "Scenario total: $TOTAL (paging by $PAGE_SIZE)"
 
-          # Stop tail; give it a moment to flush any pending records.
+          TOTAL_PASSED=0
+          TOTAL_FAILED=0
+          TOTAL_SKIPPED=0
+          ALL_FAILURES="[]"
+
+          OFFSET=0
+          while [ "$OFFSET" -lt "$TOTAL" ]; do
+            echo "--- Batch offset=$OFFSET limit=$PAGE_SIZE ---"
+            RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 60 \
+              "$URL/conformance?offset=$OFFSET&limit=$PAGE_SIZE" || true)
+            BODY=$(echo "$RESPONSE" | head -n -1)
+            CODE=$(echo "$RESPONSE" | tail -n 1)
+            echo "HTTP $CODE"
+
+            # Parse; on non-JSON (CF error page) print raw body and
+            # surface a clear error.
+            if ! echo "$BODY" | jq -e '.summary' >/dev/null 2>&1; then
+              echo "::group::Non-JSON response body"
+              echo "$BODY" | head -40
+              echo "::endgroup::"
+              echo "::error::Batch at offset=$OFFSET returned non-JSON (HTTP $CODE)"
+              OFFSET=$((OFFSET + PAGE_SIZE))
+              TOTAL_FAILED=$((TOTAL_FAILED + 1))
+              continue
+            fi
+
+            BATCH_PASSED=$(echo "$BODY" | jq -r '.summary.passed')
+            BATCH_FAILED=$(echo "$BODY" | jq -r '.summary.failed')
+            BATCH_SKIPPED=$(echo "$BODY" | jq -r '.summary.skipped')
+            echo "batch summary: passed=$BATCH_PASSED failed=$BATCH_FAILED skipped=$BATCH_SKIPPED"
+
+            TOTAL_PASSED=$((TOTAL_PASSED + BATCH_PASSED))
+            TOTAL_FAILED=$((TOTAL_FAILED + BATCH_FAILED))
+            TOTAL_SKIPPED=$((TOTAL_SKIPPED + BATCH_SKIPPED))
+
+            if [ "$BATCH_FAILED" -gt 0 ]; then
+              BATCH_FAILURES=$(echo "$BODY" | jq '.results | map(select(.status == "failed"))')
+              ALL_FAILURES=$(echo "$ALL_FAILURES $BATCH_FAILURES" | jq -s 'add')
+            fi
+
+            OFFSET=$((OFFSET + PAGE_SIZE))
+          done
+
+          # Stop tail; give it a moment to flush.
           sleep 2
           kill "$TAIL_PID" 2>/dev/null || true
           wait "$TAIL_PID" 2>/dev/null || true
 
-          if [ "$CODE" != "200" ]; then
+          echo "=== Conformance summary ==="
+          echo "passed=$TOTAL_PASSED failed=$TOTAL_FAILED skipped=$TOTAL_SKIPPED total=$TOTAL"
+
+          if [ "$TOTAL_FAILED" -gt 0 ]; then
             echo "::group::Failed scenarios"
-            echo "$BODY" | jq '.results | map(select(.status == "failed"))' || echo "$BODY"
+            echo "$ALL_FAILURES" | jq .
             echo "::endgroup::"
             echo "::group::Worker tail output (DO-side exception stacks)"
-            # Extract exception messages/stacks from tail JSON. Each
-            # record has `.exceptions[]` when a DO throw happened.
             jq -c 'select(.exceptions | length > 0) | {
               event: .event,
               exceptions: (.exceptions | map({name, message, stack}))
-            }' tail.log 2>/dev/null || cat tail.log
+            }' tail.log 2>/dev/null | head -40
+            if [ ! -s tail.log ]; then
+              echo "(tail.log is empty — check wrangler tail startup errors below)"
+            fi
             echo "::endgroup::"
-            echo "::error::Conformance endpoint returned $CODE"
+            echo "::group::wrangler tail stderr (diagnostics)"
+            grep -i "error\|unknown" tail.log | head -20 || true
+            echo "::endgroup::"
+            echo "::error::Real-CF conformance failed: $TOTAL_FAILED of $TOTAL scenarios"
             exit 1
           fi
-          # Assert summary invariants: no failures, at least one pass.
-          echo "$BODY" | jq -e '.summary.failed == 0'
-          echo "$BODY" | jq -e '.summary.passed > 0'
+          if [ "$TOTAL_PASSED" -eq 0 ]; then
+            echo "::error::No scenarios passed — workflow assertion failed"
+            exit 1
+          fi
+
+      - name: Upload tail.log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrangler-tail-log
+          path: packages/runtime-cloudflare/tail.log
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Teardown — delete CI worker
         # Always runs. DOs created by a deleted worker persist until CF
