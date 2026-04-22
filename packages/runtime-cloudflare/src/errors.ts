@@ -3,7 +3,7 @@
  *
  * Every {@link RuntimeError} this adapter raises carries a stable `code`
  * of the form `MRD-CF-<primitive>-<nnn>` and a `docUrl` pointing at the
- * matching page on `meridian.dev/errors/`. The code catalog is part of
+ * matching page on `meridianprotocol.dev/errors/`. The code catalog is part of
  * the adapter's stable API surface within a major version — breaking
  * code changes bump major per the DX review decision (2026-04-21). When
  * adding a code, append a new number at the end of the appropriate
@@ -195,7 +195,7 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
   },
 };
 
-const DOC_BASE_URL = "https://meridian.dev/errors/";
+const DOC_BASE_URL = "https://meridianprotocol.dev/errors/";
 
 /**
  * Construct a RuntimeError tagged with a stable catalog code + doc URL.

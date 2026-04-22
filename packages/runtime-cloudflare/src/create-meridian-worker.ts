@@ -356,7 +356,7 @@ function errorResponse(err: unknown): Response {
           category: fromMessage.category,
           message: e.message,
           retryable: fromMessage.retryable,
-          docUrl: `https://meridian.dev/errors/${fromMessage.code}`,
+          docUrl: `https://meridianprotocol.dev/errors/${fromMessage.code}`,
         },
       },
       { status },
