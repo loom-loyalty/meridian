@@ -28,3 +28,14 @@ class_name = "RegistryDurableObject"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AgentDurableObject", "RegistryDurableObject"]
+
+# Workers Observability — enables persistent, non-sampled logs +
+# exception tracking in the Cloudflare dashboard (Workers & Pages →
+# your worker → Logs tab). Strongly recommended during v0.1 validation
+# so the DO-side `console.error` output from `log-rpc-error.ts` is
+# inspectable after the fact. For production, consider lowering
+# `head_sampling_rate` to 0.1 or similar once the adapter is stable
+# in your environment.
+[observability]
+enabled = true
+head_sampling_rate = 1.0

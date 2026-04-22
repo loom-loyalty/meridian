@@ -18,3 +18,10 @@ class_name = "RegistryDurableObject"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["AgentDurableObject", "RegistryDurableObject"]
+
+# Workers Observability — matches `wrangler-ci.toml` so local
+# `wrangler dev` with `--remote` behaves the same as CI when it
+# comes to log retention + dashboard visibility.
+[observability]
+enabled = true
+head_sampling_rate = 1.0
