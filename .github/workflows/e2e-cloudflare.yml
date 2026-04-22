@@ -150,11 +150,18 @@ jobs:
           # 8 is comfortably safe for the longest-running scenarios
           # (errors-codes-reachable does ~26 DO RPCs).
           PAGE_SIZE=8
-          TOTAL=$(curl -sS --max-time 30 "$URL/conformance?offset=0&limit=0" \
-            | jq -r '.total' 2>/dev/null || echo "")
-          if [ -z "$TOTAL" ] || [ "$TOTAL" = "null" ]; then
+
+          # Save the initial metadata response to a file so we can
+          # inspect it in the error case without a second curl (which
+          # might behave differently or leak across retries).
+          META_FILE=conf-meta.json
+          curl -sS --max-time 30 -o "$META_FILE" \
+            "$URL/conformance?offset=0&limit=0" || true
+          if ! TOTAL=$(jq -er '.total' "$META_FILE" 2>/dev/null); then
             echo "::error::Could not determine scenario total from /conformance?limit=0"
-            curl -sS --max-time 30 "$URL/conformance?offset=0&limit=0" | head -20
+            echo "::group::Metadata response body"
+            cat "$META_FILE" | head -40 || echo "(file empty)"
+            echo "::endgroup::"
             exit 1
           fi
           echo "Scenario total: $TOTAL (paging by $PAGE_SIZE)"
