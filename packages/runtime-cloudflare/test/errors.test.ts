@@ -46,7 +46,7 @@ describe("error catalog", () => {
       expect(err.category).toBe(category);
       expect(err.retryable).toBe(false);
       expect(err.context?.code).toBe(code);
-      expect(err.context?.docUrl).toBe(`https://meridian.dev/errors/${code}`);
+      expect(err.context?.docUrl).toBe(`https://meridianprotocol.dev/errors/${code}`);
       expect(err.message).toMatch(new RegExp(`^\\[${code}\\]`));
     }
   });
@@ -57,7 +57,7 @@ describe("error catalog", () => {
     });
     expect(err.context?.code).toBe("MRD-CF-ST-001");
     expect(err.context?.docUrl).toBe(
-      "https://meridian.dev/errors/MRD-CF-ST-001",
+      "https://meridianprotocol.dev/errors/MRD-CF-ST-001",
     );
     expect(err.context?.keyByteLength).toBe(2048);
     expect(err.context?.limit).toBe(1024);
