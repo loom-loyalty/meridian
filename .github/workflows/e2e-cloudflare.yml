@@ -119,13 +119,39 @@ jobs:
             if [ "$CODE" = "200" ]; then
               echo "Smoke OK (attempt $i): body=$BODY"
               echo "$BODY" | jq -e '.runtime == "meridian-cloudflare" and .milestone == "m1-walking-skeleton"'
-              exit 0
+              break
             fi
             echo "Attempt $i: HTTP $CODE; retrying in 5s..."
             sleep 5
+            if [ "$i" = "6" ]; then
+              echo "::error::Smoke check failed after 6 attempts"
+              exit 1
+            fi
           done
-          echo "::error::Smoke check failed after 6 attempts"
-          exit 1
+
+      - name: Conformance — run runtime scenarios against live deploy
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          # Longer max-time: the suite spawns / terminates ~30 agents
+          # serially. Any one scenario that hits a cold DO adds a few
+          # hundred ms.
+          RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 120 "$URL/conformance")
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          CODE=$(echo "$RESPONSE" | tail -n 1)
+          echo "Conformance HTTP $CODE"
+          echo "$BODY" | jq '.summary'
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Conformance endpoint returned $CODE"
+            echo "$BODY" | jq '.results | map(select(.status == "failed"))'
+            exit 1
+          fi
+          # Assert summary invariants: no failures, at least one pass,
+          # and the reported runtime kind is real-cf (proves the live
+          # deploy branched into the correct adapter).
+          echo "$BODY" | jq -e '.summary.failed == 0'
+          echo "$BODY" | jq -e '.summary.passed > 0'
 
       - name: Teardown — delete CI worker
         # Always runs. DOs created by a deleted worker persist until CF

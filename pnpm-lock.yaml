@@ -61,6 +61,9 @@ importers:
 
   packages/runtime-cloudflare:
     dependencies:
+      '@loom-loyalty/meridian-conformance':
+        specifier: workspace:*
+        version: link:../conformance
       '@loom-loyalty/meridian-types':
         specifier: workspace:*
         version: link:../types
