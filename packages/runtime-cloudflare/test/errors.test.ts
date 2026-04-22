@@ -31,6 +31,7 @@ describe("error catalog", () => {
       ["MRD-CF-LC-002", "not_found"],
       ["MRD-CF-LC-003", "invalid_argument"],
       ["MRD-CF-LC-004", "invalid_argument"],
+      ["MRD-CF-LC-005", "permission_denied"],
       ["MRD-CF-ST-001", "invalid_argument"],
       ["MRD-CF-ST-002", "invalid_argument"],
       ["MRD-CF-ST-003", "invalid_argument"],

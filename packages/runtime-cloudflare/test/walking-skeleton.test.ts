@@ -39,11 +39,24 @@ describe("walking skeleton", () => {
     await a.terminate();
   });
 
-  it("rejects spawn that would change a DO's bound identity with MRD-CF-LC-001", async () => {
+  it("rejects spawn where config.id doesn't match the DO name with MRD-CF-LC-005", async () => {
+    // DO binding name is "skeleton-spawn-conflict" but config.id is
+    // "different-agent" — the identity guard prevents an adopter
+    // from spawning DO X under name Y, which would otherwise let
+    // sendTo stamp a forged sender identity.
     const a = stub("skeleton-spawn-conflict");
-    await a.spawn({ id: "skeleton-spawn-conflict", domain: "test" });
     await expect(
       a.spawn({ id: "different-agent", domain: "test" }),
+    ).rejects.toThrow(/MRD-CF-LC-005/);
+  });
+
+  it("rejects re-spawn with same id but different domain with MRD-CF-LC-001", async () => {
+    // Identity check passes (config.id == DO name); conflict is on
+    // domain change.
+    const a = stub("skeleton-domain-change");
+    await a.spawn({ id: "skeleton-domain-change", domain: "infra" });
+    await expect(
+      a.spawn({ id: "skeleton-domain-change", domain: "product" }),
     ).rejects.toThrow(/MRD-CF-LC-001/);
     await a.terminate();
   });

@@ -99,6 +99,13 @@ describe("lifecycle", () => {
     await a.terminate();
   });
 
+  it("rejects spawn when config.id doesn't match DO name with MRD-CF-LC-005 (sender-identity guard)", async () => {
+    const a = stub("lc-identity-real");
+    await expect(
+      a.spawn({ id: "lc-identity-forged", domain: "test" }),
+    ).rejects.toThrow(/MRD-CF-LC-005/);
+  });
+
   it("spawn without id or domain throws MRD-CF-LC-004", async () => {
     const a = stub("lc-missing-required");
     await expect(a.spawn({ id: "", domain: "" })).rejects.toThrow(

@@ -31,6 +31,7 @@ export type MeridianErrorCode =
   | "MRD-CF-LC-002" // method invoked before spawn
   | "MRD-CF-LC-003" // resume called on terminated agent
   | "MRD-CF-LC-004" // spawn missing required id/domain
+  | "MRD-CF-LC-005" // spawn config.id doesn't match DO binding name (spoofing guard)
   // State
   | "MRD-CF-ST-001" // state key too large (> 1024 bytes utf-8)
   | "MRD-CF-ST-002" // state value too large (> 1 MB approximate)
@@ -72,6 +73,12 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
     category: "invalid_argument",
     retryable: false,
     summary: "SpawnConfig.id and SpawnConfig.domain are required",
+  },
+  "MRD-CF-LC-005": {
+    category: "permission_denied",
+    retryable: false,
+    summary:
+      "SpawnConfig.id does not match the DO binding name (sender-identity spoof guard)",
   },
   "MRD-CF-ST-001": {
     category: "invalid_argument",
