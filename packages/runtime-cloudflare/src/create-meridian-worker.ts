@@ -60,6 +60,13 @@ import {
   lookupMeridianCode,
   MERIDIAN_ERROR_CODE_RE,
 } from "./errors.js";
+import {
+  resolveTenantContext,
+  scopedAgentName,
+  scopedRegistryKey,
+  type TenancyConfig,
+  type TenantContext,
+} from "./tenancy.js";
 
 /** Handler for a custom route injected via `config.routes`. */
 export type MeridianRouteHandler = (
@@ -119,6 +126,22 @@ export interface MeridianWorkerConfig {
    * arrive in v0.1.5.
    */
   auth?: AuthConfig;
+  /**
+   * Opt-in multi-tenancy. When set, every incoming request is mapped
+   * to a `tenantId` via the adopter-supplied `TenantAuthorizer`, and
+   * the runtime scopes DO names, registry shards, and analytics
+   * dimensions per tenant so two agents with the same id under
+   * different tenants stay isolated.
+   *
+   * When `tenancy` is undefined (default), the worker runs
+   * single-tenant — the pre-M6 behavior. Existing deploys upgrading
+   * from M5 see no change to their DO addresses or state keys.
+   *
+   * See `../README.md#tenancy` for the full invariant list (data
+   * isolation at the DO layer, cross-tenant address rejection,
+   * admin-route scoping, analytics tagging).
+   */
+  tenancy?: TenancyConfig;
 }
 
 // Maps MRD-CF-* error categories (from MeridianError.category) to HTTP status
@@ -194,7 +217,13 @@ export function createMeridianWorker(
           if (req.method !== "GET") {
             enforceBearer(req, config.auth);
           }
-          return await handleAgentRoute(req, env, agentId, subPath);
+          // Resolve tenant context AFTER bearer check: bearer
+          // validates the token is well-formed; the authorizer then
+          // maps the authenticated request to its tenant. When
+          // tenancy is off, this returns the SINGLE_TENANT_CONTEXT
+          // stub and DO naming stays unchanged.
+          const tenant = await resolveTenantContext(req, config.tenancy);
+          return await handleAgentRoute(req, env, agentId, subPath, tenant);
         }
 
         // /admin/* routes — EVERY method gated by bearer auth when
@@ -204,7 +233,8 @@ export function createMeridianWorker(
         // and `GET /admin/agents/:id` land here.
         if (url.pathname.startsWith("/admin/")) {
           enforceBearer(req, config.auth);
-          return await handleAdminRoute(req, env, url);
+          const tenant = await resolveTenantContext(req, config.tenancy);
+          return await handleAdminRoute(req, env, url, tenant);
         }
       } catch (err) {
         return errorResponse(err);
@@ -269,9 +299,14 @@ async function handleAgentRoute(
   env: AgentEnv,
   agentId: AgentId,
   subPath: string,
+  tenant: TenantContext,
 ): Promise<Response> {
+  // `scopedAgentName` returns the raw agentId in single-tenant mode
+  // so existing DO addresses stay unchanged. Multi-tenant mode
+  // prefixes with tenantId so two tenants' same-named agents hash
+  // to different DOs.
   const stub = env.AGENT.get(
-    env.AGENT.idFromName(agentId),
+    env.AGENT.idFromName(scopedAgentName(agentId, tenant)),
   ) as unknown as DurableObjectStub<AgentDurableObject>;
 
   // /agents/:id
@@ -296,10 +331,18 @@ async function handleAgentRoute(
     if (!body || !body.domain) {
       return badRequest("spawn body requires `domain` field");
     }
-    const handle: AgentHandle = await stub.spawn({
+    // Force the authorizer-resolved tenantId onto the spawn — the
+    // adopter cannot spoof a tenant via the request body. Single-
+    // tenant deploys pass undefined here, preserving pre-M6 meta
+    // shape for existing DOs.
+    const spawnConfig: SpawnConfig = {
       id: agentId,
       domain: body.domain,
-    });
+    };
+    if (tenant.enabled) {
+      spawnConfig.tenantId = tenant.tenantId;
+    }
+    const handle: AgentHandle = await stub.spawn(spawnConfig);
     return jsonResponse(handle, { status: 201 });
   }
 
@@ -378,30 +421,27 @@ async function handleAgentRoute(
 // Experimental surface (tail, queue, etc.) lands in M4c behind
 // `--experimental`. Shape there may shift across v0.1.x.
 
-// Registry shard key. Mirrors `cf-lifecycle.ts` /
-// `cf-transport.ts`; when the sharded registry lands in M6,
-// admin routes will fan out across all shards instead of hitting
-// one.
-const ADMIN_REGISTRY_KEY = "default";
-
 async function handleAdminRoute(
   req: Request,
   env: AgentEnv,
   url: URL,
+  tenant: TenantContext,
 ): Promise<Response> {
-  // /admin/domains — list registered agents grouped by domain.
+  // /admin/domains — list registered agents grouped by domain,
+  // tenant-scoped. Multi-tenant worker → only the caller's agents.
   if (url.pathname === "/admin/domains") {
     if (req.method !== "GET") return methodNotAllowed(["GET"]);
-    return handleAdminDomains(env);
+    return handleAdminDomains(env, tenant);
   }
 
-  // /admin/agents/:id — inspect one agent (handle + usage +
-  // schedules + state-key snapshot + inbox length).
+  // /admin/agents/:id — inspect one agent within the caller's
+  // tenant. Cross-tenant access returns MRD-CF-LC-002 (not_found)
+  // because the agent simply doesn't exist under this tenant's DO.
   const inspectMatch = url.pathname.match(/^\/admin\/agents\/([^/]+)$/);
   if (inspectMatch) {
     if (req.method !== "GET") return methodNotAllowed(["GET"]);
     const agentId = decodeURIComponent(inspectMatch[1]!);
-    return handleAdminInspect(env, agentId);
+    return handleAdminInspect(env, agentId, tenant);
   }
 
   return jsonResponse(
@@ -410,9 +450,16 @@ async function handleAdminRoute(
   );
 }
 
-async function handleAdminDomains(env: AgentEnv): Promise<Response> {
+async function handleAdminDomains(
+  env: AgentEnv,
+  tenant: TenantContext,
+): Promise<Response> {
+  // Registry shard keyed per-tenant when tenancy is on. Because the
+  // registry DO IS the tenant, `list()` here can only ever return
+  // agents registered under the caller's tenant — cross-tenant
+  // enumeration is impossible by construction.
   const registry = env.REGISTRY.get(
-    env.REGISTRY.idFromName(ADMIN_REGISTRY_KEY),
+    env.REGISTRY.idFromName(scopedRegistryKey(tenant)),
   ) as unknown as DurableObjectStub<RegistryDurableObject>;
   const entries = await registry.list();
 
@@ -438,9 +485,13 @@ async function handleAdminDomains(env: AgentEnv): Promise<Response> {
 async function handleAdminInspect(
   env: AgentEnv,
   agentId: AgentId,
+  tenant: TenantContext,
 ): Promise<Response> {
+  // Scope target DO by caller's tenant. If agent id "X" exists
+  // under tenant A and B, the admin caller sees only their tenant's
+  // "X"; calling across tenants naturally returns 404.
   const stub = env.AGENT.get(
-    env.AGENT.idFromName(agentId),
+    env.AGENT.idFromName(scopedAgentName(agentId, tenant)),
   ) as unknown as DurableObjectStub<AgentDurableObject>;
 
   // Pull everything in parallel. `stub.get()` throws MRD-CF-LC-002

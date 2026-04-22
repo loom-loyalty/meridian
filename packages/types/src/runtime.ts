@@ -27,6 +27,14 @@ export interface SpawnConfig {
   permissions?: PermissionScope;
   metadata?: Record<string, string>;
   idempotent?: boolean;
+  /**
+   * Tenant identifier for multi-tenant runtimes. When omitted, the
+   * runtime treats the agent as single-tenant (implementation-defined
+   * default, typically `"default"`). Runtimes that support tenancy
+   * MUST scope DO/registry/state storage by this value so two agents
+   * with the same `id` under different tenants stay isolated.
+   */
+  tenantId?: string;
 }
 
 export interface AgentHandle {
@@ -34,6 +42,11 @@ export interface AgentHandle {
   domain: DomainId;
   status: "running" | "suspended" | "terminating";
   spawnedAt: Timestamp;
+  /**
+   * Tenant identifier if the runtime is multi-tenant. Absent on
+   * handles from single-tenant runtimes.
+   */
+  tenantId?: string;
 }
 
 export interface AgentLifecycle {
