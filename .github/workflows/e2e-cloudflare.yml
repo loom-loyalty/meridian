@@ -251,9 +251,13 @@ jobs:
           if-no-files-found: ignore
 
       - name: Teardown — delete CI worker
-        # Always runs. DOs created by a deleted worker persist until CF
-        # garbage-collects them; the M1 smoke path spawns no DOs.
-        if: always()
+        # Only runs on success. On failure we leave the worker deployed
+        # so its Workers Logs stay inspectable via the Cloudflare
+        # dashboard (dashboard logs die with the worker). Manual
+        # teardown after investigation: `wrangler delete --name
+        # meridian-runtime-cloudflare-ci --force`. The next real-CF
+        # run redeploys over it regardless.
+        if: success()
         working-directory: packages/runtime-cloudflare
         run: |
           pnpm wrangler delete \
