@@ -169,6 +169,31 @@ describe("transport primitive", () => {
     await target.terminate();
   });
 
+  it("inbox partition rejects deliveries past 1024-message cap with MRD-CF-TR-003", async () => {
+    const recv = stub("tr-cap-recv");
+    const sender = stub("tr-cap-sender");
+    await recv.spawn({ id: "tr-cap-recv", domain: "test" });
+    await sender.spawn({ id: "tr-cap-sender", domain: "test" });
+
+    // Fill the partition to exactly the cap.
+    const body = new Uint8Array([0]); // tiny payload
+    for (let i = 0; i < 1024; i++) {
+      await sender.send("tr-cap-recv", body);
+    }
+
+    // One past the cap → MRD-CF-TR-003
+    await expect(sender.send("tr-cap-recv", body)).rejects.toThrow(
+      /MRD-CF-TR-003/,
+    );
+
+    // Drain releases capacity.
+    await recv.drainInbox();
+    await sender.send("tr-cap-recv", body);
+
+    await recv.terminate();
+    await sender.terminate();
+  }, 30_000);
+
   it("late-spawned agents do NOT receive a prior broadcast", async () => {
     const sender = stub("tr-latespawn-sender");
     const early = stub("tr-latespawn-early");

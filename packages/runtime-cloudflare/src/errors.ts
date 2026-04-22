@@ -44,10 +44,18 @@ export type MeridianErrorCode =
   // Transport
   | "MRD-CF-TR-001" // payload exceeds 1 MB wire limit
   | "MRD-CF-TR-002" // broadcast selector produced zero recipients
+  | "MRD-CF-TR-003" // inbox partition full (per-sender backpressure)
+  // Resources
+  | "MRD-CF-RS-001" // reportTokens would exceed maxTokensTotal
+  | "MRD-CF-RS-002" // reportCost would exceed maxCostUsd
+  | "MRD-CF-RS-003" // reportTokens single-call exceeds maxTokensPerCall
+  | "MRD-CF-RS-004" // activeOperations would exceed maxConcurrency
   // Experimental
   | "MRD-CF-EX-001" // snapshotState unavailable in v0.1
   | "MRD-CF-EX-002" // SpawnConfig.fromSnapshot rejected in v0.1
-  | "MRD-CF-EX-003"; // PermissionScope ignored (dropped with warning in v0.1)
+  | "MRD-CF-EX-003" // PermissionScope ignored (dropped with warning in v0.1)
+  | "MRD-CF-EX-004" // setPermissions unavailable in v0.1
+  | "MRD-CF-EX-005"; // getPermissions unavailable in v0.1
 
 interface CodeSpec {
   category: ErrorCategory;
@@ -128,6 +136,34 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
     retryable: false,
     summary: "broadcast selector matched zero registered agents",
   },
+  "MRD-CF-TR-003": {
+    category: "resource_exhausted",
+    retryable: true,
+    summary:
+      "inbox partition full for this (sender, recipient) pair; retry with backoff",
+  },
+  "MRD-CF-RS-001": {
+    category: "resource_exhausted",
+    retryable: false,
+    summary:
+      "reportTokens would exceed ResourceLimits.maxTokensTotal (RUNTIME-SPEC §4.5)",
+  },
+  "MRD-CF-RS-002": {
+    category: "resource_exhausted",
+    retryable: false,
+    summary:
+      "reportCost would exceed ResourceLimits.maxCostUsd (RUNTIME-SPEC §4.5)",
+  },
+  "MRD-CF-RS-003": {
+    category: "invalid_argument",
+    retryable: false,
+    summary: "reportTokens single call exceeds ResourceLimits.maxTokensPerCall",
+  },
+  "MRD-CF-RS-004": {
+    category: "resource_exhausted",
+    retryable: true,
+    summary: "concurrent operations would exceed ResourceLimits.maxConcurrency",
+  },
   "MRD-CF-EX-001": {
     category: "unavailable",
     retryable: false,
@@ -144,6 +180,18 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
     retryable: false,
     summary:
       "SpawnConfig.permissions is dropped in v0.1 (no enforcement); upgrade to v0.1.5 for AuthPlugin",
+  },
+  "MRD-CF-EX-004": {
+    category: "unavailable",
+    retryable: false,
+    summary:
+      "setPermissions is @experimental and not implemented in v0.1 (AuthPlugin lands in v0.1.5)",
+  },
+  "MRD-CF-EX-005": {
+    category: "unavailable",
+    retryable: false,
+    summary:
+      "getPermissions is @experimental and not implemented in v0.1 (AuthPlugin lands in v0.1.5)",
   },
 };
 

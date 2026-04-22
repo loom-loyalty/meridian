@@ -21,9 +21,12 @@ import type {
   AgentSelector,
   BroadcastReceipt,
   IncomingMessage,
+  LimitEventHandler,
   ListOptions,
   ListResult,
   MessageReceipt,
+  ResourceLimits,
+  ResourceUsage,
   ScheduleId,
   ScheduleInfo,
   SpawnConfig,
@@ -115,4 +118,79 @@ export interface TransportPlugin {
   receiveAll(): Promise<IncomingMessage[]>;
   /** Empty the mailbox across all senders. */
   drainAll(): Promise<IncomingMessage[]>;
+}
+
+/**
+ * Resource accounting + enforcement for a single agent.
+ *
+ * What we can actually measure in workerd user-space is tokens + USD
+ * cost + concurrent-operation count. Memory and CPU are managed by
+ * the CF platform itself (hard-killed on limit exceed), so those
+ * fields in {@link ResourceUsage} are best-effort approximations.
+ *
+ * Adopter code reports tokens/cost via `reportTokens` /
+ * `reportCost`; enforcement happens BEFORE the counter increments so
+ * a single over-limit call fails without partial accounting.
+ * `getUsage()` is sub-1-second latency (DO-storage reads, not
+ * Analytics Engine round-trips) per RUNTIME-SPEC §4.5.
+ *
+ * `setLimits` in-flight semantics: already-started operations
+ * complete under their OWN limits snapshot; subsequent operations
+ * see the new limits. The plugin doesn't try to mid-operation
+ * interrupt — that's not reachable without a cooperative cancel
+ * mechanism the spec doesn't yet define.
+ */
+export interface ResourcesPlugin {
+  setLimits(limits: ResourceLimits): Promise<void>;
+  getLimits(): Promise<ResourceLimits>;
+  getUsage(): Promise<ResourceUsage>;
+  onLimitEvent(handler: LimitEventHandler): Promise<void>;
+
+  /** Adopter reports token consumption. Throws on limit breach. */
+  reportTokens(n: number, attribution?: { workItemId?: string }): Promise<void>;
+  /** Adopter reports USD cost. Throws on limit breach. */
+  reportCost(usd: number, attribution?: { workItemId?: string }): Promise<void>;
+
+  /**
+   * Begin an operation — increments activeOperations after enforcing
+   * the concurrency cap. Returns a dispose token; the caller MUST
+   * call the returned `endOperation()` when done so the counter
+   * decrements (use a try/finally in adopter hook code).
+   */
+  beginOperation(): Promise<() => Promise<void>>;
+}
+
+/**
+ * Observability for emitting structured logs, metrics, and spans.
+ *
+ * Public plugin API (exported from the package per the eng-review
+ * decision — the ONE plugin with clear external demand signal).
+ * Adopters can swap `CloudflareAnalyticsPlugin` / `CloudflareLogsPlugin`
+ * for an OTEL/Datadog/Honeycomb adapter when they ship.
+ *
+ * Emission is non-blocking per RUNTIME-SPEC §4.6. Automatic
+ * dimensions (`agentId`, `domain`, `workItemId`) are merged into
+ * every emit by the hosting DO.
+ */
+export interface ObservabilityPlugin {
+  log(entry: {
+    level: "debug" | "info" | "warn" | "error";
+    message: string;
+    agentId?: string;
+    domain?: string;
+    workItemId?: string;
+    timestamp: Timestamp;
+    fields?: Record<string, unknown>;
+  }): void;
+  metric(name: string, value: number, tags?: Record<string, string>): void;
+  startSpan(
+    name: string,
+    parentSpanId?: string,
+  ): {
+    spanId: string;
+    traceId: string;
+    setAttribute(key: string, value: string | number | boolean): void;
+    addEvent(name: string, attributes?: Record<string, unknown>): void;
+    end(): void;
+  };
 }

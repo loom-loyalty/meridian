@@ -26,12 +26,19 @@ import type {
   BroadcastReceipt,
   DomainId,
   IncomingMessage,
+  LimitEventHandler,
   ListOptions,
   ListResult,
   MessageReceipt,
+  ResourceLimits,
+  ResourceUsage,
   ScheduleId,
   Timestamp,
+  WorkItemId,
 } from "@loom-loyalty/meridian-types";
+
+import type { FiredSchedule } from "./primitives/cf-scheduling.js";
+import type { ObservabilityPlugin } from "./observability/types.js";
 
 /**
  * The context passed to every `AgentSpec` hook. Provides scoped
@@ -63,6 +70,42 @@ export interface AgentContext {
     cron(cron: string, payload?: unknown): Promise<ScheduleId>;
     cancel(scheduleId: ScheduleId): Promise<void>;
   };
+
+  /**
+   * Resource accounting. Adopter code calls `reportTokens` /
+   * `reportCost` after LLM / tool invocations; the plugin enforces
+   * limits and throws `MRD-CF-RS-*` on breach before the counter
+   * increments (so partial-accounting never happens).
+   *
+   * `beginOperation` returns an `endOperation` callback — use in a
+   * try/finally so the concurrency counter always decrements:
+   *
+   *     const end = await ctx.resources.beginOperation();
+   *     try { ...do work... } finally { await end(); }
+   */
+  readonly resources: {
+    setLimits(limits: ResourceLimits): Promise<void>;
+    getLimits(): Promise<ResourceLimits>;
+    getUsage(): Promise<ResourceUsage>;
+    onLimitEvent(handler: LimitEventHandler): Promise<void>;
+    reportTokens(
+      n: number,
+      attribution?: { workItemId?: WorkItemId },
+    ): Promise<void>;
+    reportCost(
+      usd: number,
+      attribution?: { workItemId?: WorkItemId },
+    ): Promise<void>;
+    beginOperation(): Promise<() => Promise<void>>;
+  };
+
+  /**
+   * Observability surface. `log` / `metric` / `startSpan` are
+   * non-blocking per RUNTIME-SPEC §4.6; automatic dimensions
+   * (`agentId`, `domain`, any `workItemId` the hook received) are
+   * merged by the hosting DO before the underlying plugin emits.
+   */
+  readonly obs: ObservabilityPlugin;
 }
 
 export interface AgentSpec {
@@ -86,6 +129,15 @@ export interface AgentSpec {
    * Hook errors don't bubble to the sender.
    */
   onMessage?(ctx: AgentContext, msg: IncomingMessage): Promise<void>;
+
+  /**
+   * Fires once per due schedule when the DO's alarm handler runs.
+   * Invoked AFTER the fired-schedule log entry is appended, so even
+   * if the hook throws the log retains the event for replay. For
+   * coalesced cron fires, `fire.coalescedTicks` reports how many
+   * ticks were folded into this invocation.
+   */
+  onSchedule?(ctx: AgentContext, fire: FiredSchedule): Promise<void>;
 
   /**
    * Fires before `terminate()`'s `deleteAll()`. Last chance to emit

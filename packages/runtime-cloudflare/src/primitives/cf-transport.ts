@@ -42,6 +42,18 @@ const MAIL_PREFIX = "__mail::";
 const MAIL_SEQ_PREFIX = "__mail_seq::";
 const PAYLOAD_MAX_BYTES = 1_000_000; // 1 MB per RUNTIME-SPEC §4.4
 
+/**
+ * Per-(sender, recipient) inbox cap. A single sender can't queue
+ * more than this many unconsumed messages to one recipient before
+ * `deliver` rejects with MRD-CF-TR-003. Prevents an unbounded
+ * queue growth that would eventually breach the DO's 1 MB/key
+ * storage limit as a silent workerd error. Chosen conservatively:
+ * 1024 backlog entries × (modest payload) stays well under 1 MB.
+ * Per-sender partitioning means a misbehaving sender can't
+ * starve well-behaved senders' mailboxes.
+ */
+const INBOX_MAX_PER_SENDER = 1024;
+
 type AnyDurableObjectNamespace = Pick<
   DurableObjectNamespace,
   "idFromName" | "newUniqueId" | "idFromString" | "get"
@@ -181,6 +193,27 @@ export class CfTransportPlugin implements TransportPlugin {
 
     const inbox =
       (await this.ctx.storage.get<IncomingMessage[]>(mailKey)) ?? [];
+
+    // Per-sender backpressure: if this sender's partition is at cap,
+    // reject before appending so the caller sees MRD-CF-TR-003
+    // instead of a silent workerd storage error on the next put.
+    // Partitioning means this bounds the offending pair without
+    // affecting deliveries from other senders.
+    if (inbox.length >= INBOX_MAX_PER_SENDER) {
+      throw meridianError(
+        "MRD-CF-TR-003",
+        `inbox partition from ${fromAgentId} to ${myId} is at ${INBOX_MAX_PER_SENDER}-message cap; drain or retry later`,
+        {
+          context: {
+            fromAgentId,
+            toAgentId: myId,
+            queued: inbox.length,
+            cap: INBOX_MAX_PER_SENDER,
+          },
+        },
+      );
+    }
+
     inbox.push(msg);
     await this.ctx.storage.put(mailKey, inbox);
     await this.ctx.storage.put(seqKey, nextSeq);

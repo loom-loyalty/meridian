@@ -12,7 +12,7 @@
  * that the test then reads back through a normal `load` RPC.
  */
 
-import { env } from "cloudflare:test";
+import { env, runDurableObjectAlarm } from "cloudflare:test";
 import { describe, it, expect, beforeAll } from "vitest";
 import type { AgentDurableObject } from "../src/agent-do.js";
 import { defineAgent } from "../src/define-agent.js";
@@ -82,6 +82,26 @@ beforeAll(() => {
   });
 
   defineAgent({ id: "hook-update-sender", domain: "test" });
+
+  defineAgent({
+    id: "hook-onschedule",
+    domain: "test",
+    async onSchedule(ctx, fire) {
+      // Record the firing so the test can inspect it without
+      // depending on drainFiredSchedules (which the hook path
+      // consumes the log through anyway).
+      await ctx.state.save("onSchedule-fires", [
+        ...((await ctx.state.load<
+          Array<{ id: string; coalescedTicks: number; payload: unknown }>
+        >("onSchedule-fires")) ?? []),
+        {
+          id: fire.id,
+          coalescedTicks: fire.coalescedTicks,
+          payload: fire.payload,
+        },
+      ]);
+    },
+  });
 });
 
 describe("defineAgent hooks", () => {
@@ -162,6 +182,33 @@ describe("defineAgent hooks", () => {
 
     await recv.terminate();
     await sender.terminate();
+  });
+
+  it("onSchedule fires once per due entry, coalescing counts propagate", async () => {
+    const a = stub("hook-onschedule");
+    await a.spawn({ id: "hook-onschedule", domain: "test" });
+
+    // Real-time schedule at ~1.1s out; wait + trigger alarm.
+    const when = Date.now() + 1100;
+    await a.scheduleAt(when, { tag: "once" });
+
+    await new Promise((r) => setTimeout(r, 1200));
+    await runDurableObjectAlarm(a);
+
+    const fires =
+      await a.load<
+        Array<{ id: string; coalescedTicks: number; payload: unknown }>
+      >("onSchedule-fires");
+    expect(fires).toBeDefined();
+    expect(fires).toHaveLength(1);
+    expect(fires?.[0]?.coalescedTicks).toBe(1);
+    expect(fires?.[0]?.payload).toEqual({ tag: "once" });
+
+    // Because the hook consumed the fired log, the drain RPC
+    // returns empty.
+    expect(await a.drainFiredSchedules()).toEqual([]);
+
+    await a.terminate();
   });
 
   it("agents without hooks still spawn / deliver / terminate normally", async () => {

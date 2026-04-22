@@ -33,6 +33,8 @@ import type {
   ListOptions,
   ListResult,
   MessageReceipt,
+  ResourceLimits,
+  ResourceUsage,
   ScheduleId,
   ScheduleInfo,
   SpawnConfig,
@@ -40,10 +42,19 @@ import type {
 } from "@loom-loyalty/meridian-types";
 
 import { getAgentSpec, type AgentContext } from "./define-agent.js";
+import { meridianError } from "./errors.js";
+import {
+  CloudflareAnalyticsPlugin,
+  CloudflareLogsPlugin,
+  CompositeObservabilityPlugin,
+  type AnalyticsEngineLike,
+  type ObservabilityPlugin,
+} from "./observability/index.js";
 import {
   CfLifecyclePlugin,
   type LifecycleEnv,
 } from "./primitives/cf-lifecycle.js";
+import { CfResourcesPlugin } from "./primitives/cf-resources.js";
 import {
   CfSchedulingPlugin,
   type FiredSchedule,
@@ -55,6 +66,16 @@ import type { RegistryDurableObject } from "./registry-do.js";
 export interface AgentEnv extends LifecycleEnv {
   AGENT: DurableObjectNamespace<AgentDurableObject>;
   REGISTRY: DurableObjectNamespace<RegistryDurableObject>;
+  /**
+   * Optional Analytics Engine binding. If present, metrics route
+   * to it; if absent, the metric plugin is a no-op. Adopters
+   * configure in `wrangler.toml`:
+   *
+   *     [[analytics_engine_datasets]]
+   *     binding = "ANALYTICS"
+   *     dataset = "meridian_metrics"
+   */
+  ANALYTICS?: AnalyticsEngineLike;
 }
 
 export class AgentDurableObject extends DurableObject<AgentEnv> {
@@ -62,6 +83,8 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   private readonly state: CfStatePlugin;
   private readonly scheduling: CfSchedulingPlugin;
   private readonly transport: CfTransportPlugin;
+  private readonly resources: CfResourcesPlugin;
+  private readonly obs: ObservabilityPlugin;
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env);
@@ -80,16 +103,23 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
       // `onMessage` defined, fire it with a context bound to this DO.
       async (msg) => this.invokeOnMessage(msg),
     );
+    this.resources = new CfResourcesPlugin(ctx);
+    this.obs = new CompositeObservabilityPlugin([
+      new CloudflareLogsPlugin(),
+      new CloudflareAnalyticsPlugin(env.ANALYTICS),
+    ]);
   }
 
   /**
    * DO alarm hook — workerd calls this when the stored alarm fires.
-   * Delegates to the scheduling plugin, which walks every due
-   * schedule, fires the ones that are up, advances cron schedules,
-   * and reprograms the alarm.
+   * Delegates to the scheduling plugin (which persists the fired log
+   * and reprograms the next alarm), then fires the adopter's
+   * `onSchedule` hook per newly-fired entry so reactive hook
+   * adopters don't need to poll `drainFiredSchedules`.
    */
   async alarm(): Promise<void> {
     await this.scheduling.onAlarm();
+    await this.invokeOnScheduleForFires();
   }
 
   // ── Lifecycle ────────────────────────────────────────────
@@ -245,13 +275,87 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     return this.transport.drainAll();
   }
 
-  // ── Internal: onMessage hook wiring ──────────────────────
+  // ── Resources (RPC surface) ──────────────────────────────
+
+  async setLimits(limits: ResourceLimits): Promise<void> {
+    await this.lifecycle.requireMeta();
+    return this.resources.setLimits(limits);
+  }
+
+  async getLimits(): Promise<ResourceLimits> {
+    await this.lifecycle.requireMeta();
+    return this.resources.getLimits();
+  }
+
+  async getUsage(): Promise<ResourceUsage> {
+    await this.lifecycle.requireMeta();
+    return this.resources.getUsage();
+  }
+
+  async reportTokens(
+    n: number,
+    attribution?: { workItemId?: string },
+  ): Promise<void> {
+    await this.lifecycle.requireMeta();
+    return this.resources.reportTokens(n, attribution);
+  }
+
+  async reportCost(
+    usd: number,
+    attribution?: { workItemId?: string },
+  ): Promise<void> {
+    await this.lifecycle.requireMeta();
+    return this.resources.reportCost(usd, attribution);
+  }
+
+  // ── @experimental — permissions throw UNAVAILABLE ────────
+
+  async setPermissions(): Promise<never> {
+    throw meridianError("MRD-CF-EX-004");
+  }
+
+  async getPermissions(): Promise<never> {
+    throw meridianError("MRD-CF-EX-005");
+  }
+
+  // ── Internal: hook wiring ────────────────────────────────
 
   private async invokeOnMessage(msg: IncomingMessage): Promise<void> {
     const handle = await this.lifecycle.get();
     const spec = getAgentSpec(handle.id);
     if (!spec?.onMessage) return;
-    await spec.onMessage(this.contextFor(handle), msg);
+    try {
+      await spec.onMessage(this.contextFor(handle), msg);
+    } catch (err) {
+      console.warn(
+        `[agent ${handle.id}] onMessage hook threw: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * After `scheduling.onAlarm()` appends fired entries to the log,
+   * fire the adopter's `onSchedule` hook once per entry. We drain
+   * the log here so adopter-side polling and hook-side reactivity
+   * don't double-process. Adopters that want the polling model
+   * just keep `drainFiredSchedules()` and omit `onSchedule`.
+   */
+  private async invokeOnScheduleForFires(): Promise<void> {
+    if (!(await this.lifecycle.exists())) return;
+    const handle = await this.lifecycle.get();
+    const spec = getAgentSpec(handle.id);
+    if (!spec?.onSchedule) return;
+
+    const fires = await this.scheduling.drainFiredSchedules();
+    for (const fire of fires) {
+      try {
+        await spec.onSchedule(this.contextFor(handle), fire);
+      } catch (err) {
+        console.warn(
+          `[agent ${handle.id}] onSchedule hook threw for fire ${fire.id}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   /**
@@ -261,6 +365,22 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
    * (no structured-clone boundary for the updater function).
    */
   private contextFor(handle: AgentHandle): AgentContext {
+    const agentObs: ObservabilityPlugin = {
+      log: (entry) =>
+        this.obs.log({
+          ...entry,
+          agentId: entry.agentId ?? handle.id,
+          domain: entry.domain ?? handle.domain,
+        }),
+      metric: (name, value, tags) =>
+        this.obs.metric(name, value, {
+          agentId: handle.id,
+          domain: handle.domain,
+          ...tags,
+        }),
+      startSpan: (name, parentSpanId) => this.obs.startSpan(name, parentSpanId),
+    };
+
     return {
       id: handle.id,
       domain: handle.domain,
@@ -280,6 +400,16 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
         cron: (cron, payload) => this.scheduling.scheduleCron(cron, payload),
         cancel: (id) => this.scheduling.cancel(id),
       },
+      resources: {
+        setLimits: (l) => this.resources.setLimits(l),
+        getLimits: () => this.resources.getLimits(),
+        getUsage: () => this.resources.getUsage(),
+        onLimitEvent: (h) => this.resources.onLimitEvent(h),
+        reportTokens: (n, attr) => this.resources.reportTokens(n, attr),
+        reportCost: (u, attr) => this.resources.reportCost(u, attr),
+        beginOperation: () => this.resources.beginOperation(),
+      },
+      obs: agentObs,
     };
   }
 }
