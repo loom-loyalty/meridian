@@ -185,12 +185,24 @@ export function createTestRuntime(): TestRuntime {
     async list(opts?: ListOptions): Promise<ListResult> {
       const s = getOrFail(id);
       const prefix = opts?.prefix ?? "";
-      const limit = opts?.limit ?? Infinity;
-      const keys = Array.from(s.storage.keys())
+      const limit = opts?.limit;
+      // Filter + sort the full eligible key set, then apply cursor +
+      // limit. Cursor semantics mirror the CF adapter: the cursor is
+      // the last key returned, and the next page starts strictly
+      // after it (cursor excluded).
+      const all = Array.from(s.storage.keys())
         .filter((k) => !k.startsWith("__") && k.startsWith(prefix))
-        .sort()
-        .slice(0, limit);
-      return { keys };
+        .sort();
+      const afterCursor = opts?.cursor
+        ? all.filter((k) => k > opts.cursor!)
+        : all;
+      const keys =
+        limit === undefined ? afterCursor : afterCursor.slice(0, limit);
+      const cursor =
+        limit !== undefined && keys.length === limit
+          ? keys[keys.length - 1]
+          : undefined;
+      return { keys, cursor };
     },
     async incrementAtomic(key: string, delta = 1): Promise<number> {
       const s = getOrFail(id);

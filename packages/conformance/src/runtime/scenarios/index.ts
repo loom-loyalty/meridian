@@ -7,6 +7,8 @@ import {
   stateIsolation,
   stateReservedKeys,
   stateSizeLimits,
+  stateListPrefix,
+  stateListPagination,
   stateConcurrentUpdate,
   stateDurability,
 } from "./state.js";
@@ -20,6 +22,9 @@ import {
   transportOrdering,
   transportPayloadLimit,
   transportBroadcast,
+  transportBroadcastCrossDomain,
+  transportBroadcastLateSpawn,
+  transportInboxCap,
   transportDrain,
 } from "./transport.js";
 import {
@@ -32,7 +37,7 @@ import {
   resourcesLatency,
 } from "./resources.js";
 import { experimentalUnavailable } from "./experimental.js";
-import { errorsCategorized } from "./errors.js";
+import { errorsCategorized, errorsCodesReachable } from "./errors.js";
 
 import type { ConformanceScenario } from "../types.js";
 
@@ -48,6 +53,8 @@ export const runtimeScenarios: ReadonlyArray<ConformanceScenario> = [
   stateIsolation,
   stateReservedKeys,
   stateSizeLimits,
+  stateListPrefix,
+  stateListPagination,
   stateConcurrentUpdate,
   stateDurability,
   schedulingBounds,
@@ -57,6 +64,9 @@ export const runtimeScenarios: ReadonlyArray<ConformanceScenario> = [
   transportOrdering,
   transportPayloadLimit,
   transportBroadcast,
+  transportBroadcastCrossDomain,
+  transportBroadcastLateSpawn,
+  transportInboxCap,
   transportDrain,
   resourcesLimitsRoundTrip,
   resourcesEnforcement,
@@ -67,6 +77,7 @@ export const runtimeScenarios: ReadonlyArray<ConformanceScenario> = [
   resourcesLatency,
   experimentalUnavailable,
   errorsCategorized,
+  errorsCodesReachable,
 ];
 
 export * from "./lifecycle.js";

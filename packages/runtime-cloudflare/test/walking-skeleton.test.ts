@@ -134,8 +134,12 @@ describe("walking skeleton", () => {
     await a.terminate();
 
     expect(await a.exists()).toBe(false);
-    expect(await a.load("k")).toBeUndefined();
-    expect(await a.receiveAll()).toEqual([]);
+    // Post-terminate, every RPC that touches DO state rejects with
+    // MRD-CF-LC-002 — the DO is "dead" until a new spawn re-binds it.
+    // This is the same gate pre-spawn RPCs hit, giving adopters a
+    // single error code to pattern-match on for "agent not present".
+    await expect(a.load("k")).rejects.toThrow(/MRD-CF-LC-002/);
+    await expect(a.receiveAll()).rejects.toThrow(/MRD-CF-LC-002/);
 
     await b.terminate();
   });

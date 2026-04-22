@@ -32,6 +32,14 @@ const VALUE_MAX_BYTES = 1_000_000; // 1 MB per spec
 // plugin prevents adopters from writing into those namespaces.
 const RESERVED_PREFIX = "__";
 
+// Null byte appended to a cursor to produce the strict-greater
+// successor key. DO storage.list(`{start}`) is INCLUSIVE, so passing
+// `cursor` raw would duplicate the cursor key as the first entry of
+// the next page. `${cursor}\0` sorts strictly after `${cursor}` and
+// before any valid adopter-supplied successor (adopter keys are
+// UTF-8 strings; no valid character sorts between `x` and `x\0`).
+const NUL = String.fromCharCode(0);
+
 export class CfStatePlugin implements StatePlugin {
   constructor(private readonly ctx: DurableObjectState) {}
 
@@ -54,15 +62,18 @@ export class CfStatePlugin implements StatePlugin {
   async list(opts: ListOptions = {}): Promise<ListResult> {
     // DO storage's list() returns a Map of keys → values. For the
     // primitive's ListResult shape we only return keys; callers that
-    // want values go through load() per key. Cursor support: DO list
-    // accepts `start`; we mirror that as `cursor`. `limit` caps page
-    // size. `prefix` is user-facing; we translate to the full
-    // `state::<prefix>` form before calling the underlying API.
+    // want values go through load() per key. `prefix` is user-facing;
+    // we translate to the full `state::<prefix>` form before calling
+    // the underlying API. See NUL constant docstring for the cursor
+    // strict-greater trick.
     const storagePrefix = STATE_PREFIX + (opts.prefix ?? "");
+    const startKey = opts.cursor
+      ? this.toStorageKey(opts.cursor) + NUL
+      : undefined;
     const results = await this.ctx.storage.list({
       prefix: storagePrefix,
       limit: opts.limit,
-      start: opts.cursor ? this.toStorageKey(opts.cursor) : undefined,
+      start: startKey,
     });
 
     const keys: string[] = [];

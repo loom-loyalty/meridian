@@ -87,15 +87,40 @@ export default {
     const url = new URL(req.url);
 
     if (url.pathname === "/conformance") {
-      const results = await runRuntimeConformance(
-        realCfRuntime(env),
-        runtimeScenarios,
-      );
+      // Batching support: the suite runs ~31 scenarios serially, each
+      // of which hits 5-25 DO RPCs. Cold-start DOs + serial RPC cost
+      // pushes the whole suite over the ~30s Worker CPU budget on
+      // real CF. Accept `?offset=N&limit=M` so the E2E workflow can
+      // page through the scenarios across multiple Worker invocations
+      // and combine the results. Defaults preserve the single-shot
+      // behavior for local / Miniflare callers.
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      const limit = url.searchParams.get("limit");
+      const windowEnd =
+        limit !== null && limit !== ""
+          ? offset + Number(limit)
+          : runtimeScenarios.length;
+      const window = runtimeScenarios.slice(offset, windowEnd);
+
+      const results = await runRuntimeConformance(realCfRuntime(env), window);
       const summary = summarizeConformance(results);
-      return new Response(JSON.stringify({ summary, results }, null, 2), {
-        status: summary.failed === 0 ? 200 : 500,
-        headers: { "content-type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify(
+          {
+            offset,
+            limit: limit ?? null,
+            total: runtimeScenarios.length,
+            summary,
+            results,
+          },
+          null,
+          2,
+        ),
+        {
+          status: summary.failed === 0 ? 200 : 500,
+          headers: { "content-type": "application/json" },
+        },
+      );
     }
 
     const body = {

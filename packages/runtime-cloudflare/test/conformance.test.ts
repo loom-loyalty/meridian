@@ -97,10 +97,11 @@ describe("runtime conformance suite", () => {
       miniflareRuntime(),
       runtimeScenarios,
     );
-    const summary = summarizeConformance(results);
-    expect(summary.failed).toBe(0);
-    expect(summary.passed).toBeGreaterThan(0);
+    // assertAllPassed runs first so we get per-scenario failure
+    // reasons instead of just "expected 2 to be 0".
     assertAllPassed(results, "Miniflare");
+    const summary = summarizeConformance(results);
+    expect(summary.passed).toBeGreaterThan(0);
   }, 120_000);
 
   it("passes all in-memory-applicable scenarios against createTestRuntime()", async () => {
@@ -108,10 +109,9 @@ describe("runtime conformance suite", () => {
       createTestRuntime(),
       runtimeScenarios,
     );
-    const summary = summarizeConformance(results);
-    expect(summary.failed).toBe(0);
-    expect(summary.passed).toBeGreaterThan(0);
     assertAllPassed(results, "in-memory");
+    const summary = summarizeConformance(results);
+    expect(summary.passed).toBeGreaterThan(0);
   }, 120_000);
 
   it("Miniflare and in-memory runtimes have identical pass/skip sets", async () => {

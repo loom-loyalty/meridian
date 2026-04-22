@@ -84,6 +84,85 @@ export const stateSizeLimits: ConformanceScenario = {
   },
 };
 
+export const stateListPrefix: ConformanceScenario = {
+  name: "state-list-prefix",
+  description:
+    "list({prefix}) returns only keys that start with the prefix, alphabetically sorted.",
+  appliesTo: ["miniflare", "real-cf", "in-memory"],
+  async run(runtime, ctx) {
+    const id = ctx.uniqueId("st-list-prefix");
+    const agent = runtime.agent(id);
+    await agent.spawn({ id, domain: "conformance" });
+
+    await agent.save("user:alice", 1);
+    await agent.save("user:bob", 2);
+    await agent.save("user:carol", 3);
+    await agent.save("session:xyz", 4);
+    await agent.save("session:abc", 5);
+
+    const users = await agent.list({ prefix: "user:" });
+    expect(users.keys, "user: prefix").toEqual([
+      "user:alice",
+      "user:bob",
+      "user:carol",
+    ]);
+
+    const sessions = await agent.list({ prefix: "session:" });
+    expect(sessions.keys, "session: prefix").toEqual([
+      "session:abc",
+      "session:xyz",
+    ]);
+
+    const unmatched = await agent.list({ prefix: "nomatch:" });
+    expect(unmatched.keys, "empty prefix result").toEqual([]);
+
+    await agent.terminate();
+  },
+};
+
+export const stateListPagination: ConformanceScenario = {
+  name: "state-list-pagination",
+  description:
+    "list({limit, cursor}) pages through keys deterministically. Each page fits limit; cursor walks strictly forward (no duplicates).",
+  appliesTo: ["miniflare", "real-cf", "in-memory"],
+  async run(runtime, ctx) {
+    const id = ctx.uniqueId("st-list-page");
+    const agent = runtime.agent(id);
+    await agent.spawn({ id, domain: "conformance" });
+
+    // Seed 7 keys in deterministic order.
+    for (let i = 1; i <= 7; i++) {
+      await agent.save(`item-${i.toString().padStart(2, "0")}`, i);
+    }
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    while (true) {
+      const page = await agent.list({ limit: 3, cursor });
+      seen.push(...page.keys);
+      pages += 1;
+      if (page.cursor === undefined) break;
+      cursor = page.cursor;
+      if (pages > 10) ctx.fail("pagination did not terminate");
+    }
+
+    expect(seen, "all 7 keys visited exactly once, in order").toEqual([
+      "item-01",
+      "item-02",
+      "item-03",
+      "item-04",
+      "item-05",
+      "item-06",
+      "item-07",
+    ]);
+    // No duplicates across pages (proves cursor is strict-greater).
+    expect(new Set(seen).size, "no duplicate keys across pages").toBe(7);
+
+    await agent.terminate();
+  },
+};
+
 export const stateConcurrentUpdate: ConformanceScenario = {
   name: "state-concurrent-update",
   description:
