@@ -96,6 +96,14 @@ export interface AgentContext {
       usd: number,
       attribution?: { workItemId?: WorkItemId },
     ): Promise<void>;
+    /**
+     * Per-workItemId usage breakdown (RUNTIME-SPEC §4.5 attribution
+     * contract). Omit the arg to get every attributed work item
+     * on this agent, sorted by cost descending.
+     */
+    getUsageByWorkItem(
+      workItemId?: WorkItemId,
+    ): Promise<Array<{ workItemId: string; tokens: number; costUsd: number }>>;
     beginOperation(): Promise<() => Promise<void>>;
   };
 

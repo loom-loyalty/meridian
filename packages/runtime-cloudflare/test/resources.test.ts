@@ -144,6 +144,64 @@ describe("resources primitive", () => {
     );
   });
 
+  it("reportTokens + reportCost with {workItemId} feeds getUsageByWorkItem", async () => {
+    const a = stub("rs-wi-attribution");
+    await a.spawn({ id: "rs-wi-attribution", domain: "test" });
+
+    // Two work items, mixed reports with and without attribution.
+    await a.reportTokens(100, { workItemId: "wi-1" });
+    await a.reportCost(1.5, { workItemId: "wi-1" });
+    await a.reportTokens(40, { workItemId: "wi-2" });
+    await a.reportCost(0.25, { workItemId: "wi-2" });
+    // An unattributed report still increments the agent-total but
+    // not any per-wi bucket.
+    await a.reportTokens(25);
+    await a.reportCost(0.5);
+
+    // Per-wi lookup: exact match returns single entry with that wi's
+    // totals.
+    const wi1 = await a.getUsageByWorkItem("wi-1");
+    expect(wi1).toEqual([{ workItemId: "wi-1", tokens: 100, costUsd: 1.5 }]);
+
+    const wi2 = await a.getUsageByWorkItem("wi-2");
+    expect(wi2).toEqual([{ workItemId: "wi-2", tokens: 40, costUsd: 0.25 }]);
+
+    // Unknown work item id: empty array, not an error.
+    expect(await a.getUsageByWorkItem("wi-unknown")).toEqual([]);
+
+    // Full breakdown: sorted by costUsd descending. wi-1 ($1.50) >
+    // wi-2 ($0.25). The unattributed $0.50 does NOT appear as a
+    // phantom row.
+    const all = await a.getUsageByWorkItem();
+    expect(all).toEqual([
+      { workItemId: "wi-1", tokens: 100, costUsd: 1.5 },
+      { workItemId: "wi-2", tokens: 40, costUsd: 0.25 },
+    ]);
+
+    // Agent-total lifetime counters still reflect every report,
+    // attributed or not (double-entry accounting, not either/or).
+    const usage = await a.getUsage();
+    expect(usage.current.tokensLifetime).toBe(165); // 100 + 40 + 25
+    expect(usage.current.costUsdLifetime).toBeCloseTo(2.25, 4); // 1.5 + 0.25 + 0.5
+
+    await a.terminate();
+  });
+
+  it("getUsageByWorkItem returns [] before any attributed report exists", async () => {
+    const a = stub("rs-wi-empty");
+    await a.spawn({ id: "rs-wi-empty", domain: "test" });
+
+    expect(await a.getUsageByWorkItem()).toEqual([]);
+    expect(await a.getUsageByWorkItem("wi-never-seen")).toEqual([]);
+
+    // Top-level counters moved, but with no attribution the wi
+    // breakdown stays empty.
+    await a.reportTokens(10);
+    expect(await a.getUsageByWorkItem()).toEqual([]);
+
+    await a.terminate();
+  });
+
   it("setPermissions throws MRD-CF-EX-004 (unavailable in v0.1)", async () => {
     const a = stub("rs-setperm");
     await a.spawn({ id: "rs-setperm", domain: "test" });

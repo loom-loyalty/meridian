@@ -53,12 +53,20 @@ describe("transport primitive", () => {
     await senderB.send("tr-multi-recv", new TextEncoder().encode("B2"));
 
     const inbox = await recipient.receiveAll();
-    expect(inbox.map((m) => m.messageId)).toEqual([
-      "tr-multi-a::1",
-      "tr-multi-b::1",
-      "tr-multi-a::2",
-      "tr-multi-b::2",
-    ]);
+    // RUNTIME-SPEC §4.4 guarantees in-order-per-pair, not cross-pair
+    // interleaving. workerd's Date.now() can return the same ms for
+    // rapid sequential sends, so the cross-sender tie-break
+    // (lex fromAgentId) may cluster per-sender rather than interleave.
+    // We assert the spec invariants only.
+    expect(inbox).toHaveLength(4);
+    expect(new Set(inbox.map((m) => m.messageId))).toEqual(
+      new Set([
+        "tr-multi-a::1",
+        "tr-multi-a::2",
+        "tr-multi-b::1",
+        "tr-multi-b::2",
+      ]),
+    );
 
     // Per-sender ordering holds: A1 before A2, B1 before B2.
     const aMessages = inbox.filter((m) => m.fromAgentId === "tr-multi-a");

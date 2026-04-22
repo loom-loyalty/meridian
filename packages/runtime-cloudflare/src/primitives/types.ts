@@ -152,6 +152,15 @@ export interface ResourcesPlugin {
   reportCost(usd: number, attribution?: { workItemId?: string }): Promise<void>;
 
   /**
+   * Per-workItemId usage breakdown (RUNTIME-SPEC §4.5 attribution
+   * contract). Omit `workItemId` to list every attributed work
+   * item for this agent, sorted by cost descending.
+   */
+  getUsageByWorkItem(
+    workItemId?: string,
+  ): Promise<Array<{ workItemId: string; tokens: number; costUsd: number }>>;
+
+  /**
    * Begin an operation — increments activeOperations after enforcing
    * the concurrency cap. Returns a dispose token; the caller MUST
    * call the returned `endOperation()` when done so the counter

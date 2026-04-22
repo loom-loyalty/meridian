@@ -21,7 +21,16 @@ import type {
 
 export class CloudflareLogsPlugin implements ObservabilityPlugin {
   log(entry: ObservabilityLogEntry): void {
-    const serialized = JSON.stringify(entry);
+    // RUNTIME-SPEC §4.6: emission MUST NOT throw. Circular refs in
+    // `fields` would blow up `JSON.stringify`; we catch and fall
+    // back to a safe string so adopter hooks never see an
+    // observability exception bubble into their code path.
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(entry);
+    } catch {
+      serialized = `${entry.level}: ${entry.message} [Meridian: log payload contained non-serializable fields]`;
+    }
     switch (entry.level) {
       case "debug":
         console.debug(serialized);

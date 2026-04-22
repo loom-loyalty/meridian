@@ -60,13 +60,43 @@ export class CloudflareAnalyticsPlugin implements ObservabilityPlugin {
 
     // Sort tag keys so encoding is deterministic across hosts.
     const tagKeys = Object.keys(tags).sort();
-    const blobs = [name, ...tagKeys.map((k) => `${k}=${tags[k]}`)];
+    const rawBlobs = [name, ...tagKeys.map((k) => `${k}=${tags[k]}`)];
 
-    this.dataset.writeDataPoint({
-      blobs,
-      doubles: [value],
-      indexes: tags.agentId ? [tags.agentId] : [],
-    });
+    // Analytics Engine caps blobs to ~5120 bytes per data point.
+    // Trim long blobs at 200 bytes each and cap total count at 20.
+    // Everything past the cap is dropped — visible to adopters via
+    // the `meridian.obs.drops` self-metric so they notice cardinality
+    // issues before debugging missing dashboards.
+    const MAX_BLOBS = 20;
+    const MAX_BLOB_BYTES = 200;
+    const blobs = rawBlobs
+      .slice(0, MAX_BLOBS)
+      .map((b) =>
+        b.length > MAX_BLOB_BYTES ? b.slice(0, MAX_BLOB_BYTES - 3) + "..." : b,
+      );
+    const dropped = rawBlobs.length - blobs.length;
+
+    // RUNTIME-SPEC §4.6: emission MUST NOT throw. AE binding may
+    // reject for budget reasons beyond our trim; swallow + record.
+    try {
+      this.dataset.writeDataPoint({
+        blobs,
+        doubles: [value],
+        indexes: tags.agentId ? [tags.agentId] : [],
+      });
+      if (dropped > 0) {
+        // Re-emit a drops marker so adopters see when they exceeded
+        // the budget. Uses a minimal shape to avoid re-triggering.
+        this.dataset.writeDataPoint({
+          blobs: ["meridian.obs.drops", `src=${name}`],
+          doubles: [dropped],
+          indexes: tags.agentId ? [tags.agentId] : [],
+        });
+      }
+    } catch {
+      // Fire-and-forget; AE dropped the point. No re-throw — keeps
+      // adopter hook paths non-blocking.
+    }
   }
 
   startSpan(_name: string, parentSpanId?: string): ObservabilitySpan {

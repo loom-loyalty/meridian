@@ -103,7 +103,17 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
       // `onMessage` defined, fire it with a context bound to this DO.
       async (msg) => this.invokeOnMessage(msg),
     );
-    this.resources = new CfResourcesPlugin(ctx);
+    this.resources = new CfResourcesPlugin(ctx, {
+      // Adopter-supplied LimitEventHandler throws shouldn't vanish
+      // into a console.warn — route them through the same
+      // observability surface as the other hook errors so adopters
+      // see them alongside `onSpawn` / `onMessage` failures.
+      onHandlerError: async (err) => {
+        if (!(await this.lifecycle.exists())) return;
+        const handle = await this.lifecycle.get();
+        this.emitHookError("onLimitEvent", handle, err);
+      },
+    });
     this.obs = new CompositeObservabilityPlugin([
       new CloudflareLogsPlugin(),
       new CloudflareAnalyticsPlugin(env.ANALYTICS),
@@ -127,15 +137,14 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   async spawn(config: SpawnConfig): Promise<AgentHandle> {
     const handle = await this.lifecycle.spawn(config);
     // Fire the adopter's onSpawn hook if defined. Errors don't fail
-    // the spawn (the DO is already persisted); they're logged.
+    // the spawn (the DO is already persisted); they're surfaced
+    // via `meridian.hook.errors` metric + structured error log.
     const spec = getAgentSpec(handle.id);
     if (spec?.onSpawn) {
       try {
         await spec.onSpawn(this.contextFor(handle));
       } catch (err) {
-        console.warn(
-          `[agent ${handle.id}] onSpawn hook threw: ${(err as Error).message}`,
-        );
+        this.emitHookError("onSpawn", handle, err as Error);
       }
     }
     return handle;
@@ -152,8 +161,9 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   async terminate(): Promise<void> {
     // Fire the adopter's onTerminate hook BEFORE wiping so they
     // still have access to state.load / transport / etc. If the
-    // hook throws, we log and proceed with termination anyway —
-    // a stuck hook should not prevent deletion.
+    // hook throws, we emit via the hook-error surface and proceed
+    // with termination anyway — a stuck hook should not prevent
+    // deletion.
     const exists = await this.lifecycle.exists();
     if (exists) {
       const handle = await this.lifecycle.get();
@@ -162,9 +172,7 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
         try {
           await spec.onTerminate(this.contextFor(handle));
         } catch (err) {
-          console.warn(
-            `[agent ${handle.id}] onTerminate hook threw: ${(err as Error).message}`,
-          );
+          this.emitHookError("onTerminate", handle, err as Error);
         }
       }
     }
@@ -308,6 +316,18 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     return this.resources.reportCost(usd, attribution);
   }
 
+  /**
+   * Per-workItemId usage breakdown — the RUNTIME-SPEC §4.5
+   * attribution surface. Returns `[]` when no attributed reports
+   * have been recorded. Stable public API.
+   */
+  async getUsageByWorkItem(
+    workItemId?: string,
+  ): Promise<Array<{ workItemId: string; tokens: number; costUsd: number }>> {
+    await this.lifecycle.requireMeta();
+    return this.resources.getUsageByWorkItem(workItemId);
+  }
+
   // ── @experimental — permissions throw UNAVAILABLE ────────
 
   async setPermissions(): Promise<never> {
@@ -327,18 +347,21 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     try {
       await spec.onMessage(this.contextFor(handle), msg);
     } catch (err) {
-      console.warn(
-        `[agent ${handle.id}] onMessage hook threw: ${(err as Error).message}`,
-      );
+      this.emitHookError("onMessage", handle, err as Error);
     }
   }
 
   /**
    * After `scheduling.onAlarm()` appends fired entries to the log,
-   * fire the adopter's `onSchedule` hook once per entry. We drain
-   * the log here so adopter-side polling and hook-side reactivity
-   * don't double-process. Adopters that want the polling model
-   * just keep `drainFiredSchedules()` and omit `onSchedule`.
+   * fire the adopter's `onSchedule` hook once per entry using a
+   * peek → invoke → ack loop (RUNTIME-SPEC §4.3 at-least-once).
+   * If the DO crashes between peek and ack, the fire stays in the
+   * log and the next alarm retries it. If the hook throws, we
+   * still ack — adopter code errors count as "delivered"; only
+   * a DO crash mid-hook causes redelivery.
+   *
+   * Adopters that want a batch / polling model keep using
+   * `drainFiredSchedules()` and omit `onSchedule`.
    */
   private async invokeOnScheduleForFires(): Promise<void> {
     if (!(await this.lifecycle.exists())) return;
@@ -346,15 +369,82 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     const spec = getAgentSpec(handle.id);
     if (!spec?.onSchedule) return;
 
-    const fires = await this.scheduling.drainFiredSchedules();
-    for (const fire of fires) {
+    while (true) {
+      const fire = await this.scheduling.peekNextFire();
+      if (!fire) return;
       try {
         await spec.onSchedule(this.contextFor(handle), fire);
       } catch (err) {
-        console.warn(
-          `[agent ${handle.id}] onSchedule hook threw for fire ${fire.id}: ${(err as Error).message}`,
-        );
+        this.emitHookError("onSchedule", handle, err as Error, {
+          fireId: fire.id,
+        });
       }
+      // Ack AFTER the hook completes (success OR caught throw).
+      // If the DO crashed mid-hook before reaching this line, the
+      // fire stays in the log for next alarm's replay.
+      await this.scheduling.ackFire(fire.id);
+    }
+  }
+
+  /**
+   * Emit a `meridian.hook.errors` metric + structured error log
+   * whenever an adopter hook throws. The log carries
+   * ErrorFeedback-shaped fields so observability backends that
+   * forward to a FeedbackSignal channel see spec-compliant data.
+   *
+   * Both emissions are try/caught per RUNTIME-SPEC §4.6
+   * (observability emission is non-blocking; a broken obs sink
+   * must not cascade into the DO's RPC handler).
+   */
+  private emitHookError(
+    hookName:
+      | "onSpawn"
+      | "onMessage"
+      | "onSchedule"
+      | "onTerminate"
+      | "onLimitEvent",
+    handle: { id: AgentId; domain: string },
+    err: Error,
+    extraFields?: Record<string, unknown>,
+  ): void {
+    const errorCode = (err as { code?: string }).code;
+    const timestamp = Date.now() as Timestamp;
+    try {
+      this.obs.metric("meridian.hook.errors", 1, {
+        hook: hookName,
+        agentId: handle.id,
+        domain: handle.domain,
+        ...(errorCode ? { errorCode } : {}),
+      });
+    } catch {
+      // obs.metric should never throw per spec; swallow for safety.
+    }
+    try {
+      this.obs.log({
+        level: "error",
+        message: `[agent ${handle.id}] ${hookName} hook threw: ${err.message}`,
+        agentId: handle.id,
+        domain: handle.domain,
+        timestamp,
+        fields: {
+          // ErrorFeedback-shaped payload — severity `medium` and
+          // `recovered: true` because the hook throw does not halt
+          // the lifecycle step that triggered it. Adopters who want
+          // stricter semantics can re-raise from their own handler.
+          tier: "required",
+          type: "error",
+          category: `hook_error:${hookName}`,
+          severity: "medium",
+          frequency: "first",
+          blastRadius: "internal",
+          recovered: true,
+          errorCode,
+          errorMessage: err.message,
+          ...extraFields,
+        },
+      });
+    } catch {
+      // ditto.
     }
   }
 
@@ -407,6 +497,7 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
         onLimitEvent: (h) => this.resources.onLimitEvent(h),
         reportTokens: (n, attr) => this.resources.reportTokens(n, attr),
         reportCost: (u, attr) => this.resources.reportCost(u, attr),
+        getUsageByWorkItem: (wid) => this.resources.getUsageByWorkItem(wid),
         beginOperation: () => this.resources.beginOperation(),
       },
       obs: agentObs,

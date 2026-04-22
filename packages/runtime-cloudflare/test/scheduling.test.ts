@@ -212,4 +212,81 @@ describe("scheduling primitive", () => {
     await expect(a.scheduleCron("* * * * *")).rejects.toThrow(/MRD-CF-LC-002/);
     await expect(a.listSchedules()).rejects.toThrow(/MRD-CF-LC-002/);
   });
+
+  /**
+   * The peek/ack API drives `invokeOnScheduleForFires` (RUNTIME-SPEC
+   * §4.3 at-least-once). We reach into the DO isolate via
+   * `runInDurableObject` rather than expose peek/ack on the public
+   * RPC surface — adopter code goes through the `onSchedule` hook
+   * instead, or the polling `drainFiredSchedules` companion.
+   */
+  it("peekNextFire returns the head without removing; ackFire removes by id", async () => {
+    const a = stub("sc-peek-ack");
+    await a.spawn({ id: "sc-peek-ack", domain: "test" });
+
+    // Fire two once-schedules so the log has a stable 2-entry head.
+    const when1 = Date.now() + 1100;
+    const when2 = Date.now() + 1200;
+    const id1 = await a.scheduleAt(when1, "first");
+    const id2 = await a.scheduleAt(when2, "second");
+
+    await new Promise((r) => setTimeout(r, 1300));
+    await runDurableObjectAlarm(a);
+
+    // Peek does NOT consume — two peeks return the same head.
+    await runInDurableObject(a, async (inst) => {
+      const first = await inst["scheduling"].peekNextFire();
+      expect(first?.id).toBe(id1);
+      const firstAgain = await inst["scheduling"].peekNextFire();
+      expect(firstAgain?.id).toBe(id1);
+
+      // Ack by id removes that specific entry; next peek surfaces
+      // the second fire.
+      await inst["scheduling"].ackFire(id1);
+      const next = await inst["scheduling"].peekNextFire();
+      expect(next?.id).toBe(id2);
+
+      await inst["scheduling"].ackFire(id2);
+      expect(await inst["scheduling"].peekNextFire()).toBeUndefined();
+    });
+
+    // And the public polling API also sees the log as empty now.
+    expect(await a.drainFiredSchedules()).toHaveLength(0);
+
+    await a.terminate();
+  });
+
+  it("skipping ackFire leaves the fire in the log for replay (simulates DO crash)", async () => {
+    const a = stub("sc-crash-replay");
+    await a.spawn({ id: "sc-crash-replay", domain: "test" });
+
+    const when = Date.now() + 1100;
+    const fireId = await a.scheduleAt(when, "retry-me");
+    await new Promise((r) => setTimeout(r, 1200));
+    await runDurableObjectAlarm(a);
+
+    // Simulate: hook invocation peeks but the DO crashes BEFORE
+    // ackFire lands. The next alarm / adopter-side replay must
+    // still see the fire.
+    await runInDurableObject(a, async (inst) => {
+      const head = await inst["scheduling"].peekNextFire();
+      expect(head?.id).toBe(fireId);
+      // (no ackFire here)
+    });
+
+    // A subsequent peek — representing the replay path — still sees
+    // the fire. At-least-once: the log retains until explicitly ack'd.
+    await runInDurableObject(a, async (inst) => {
+      const stillThere = await inst["scheduling"].peekNextFire();
+      expect(stillThere?.id).toBe(fireId);
+    });
+
+    // drainFiredSchedules also sees the untouched fire, confirming
+    // the log wasn't silently cleared.
+    const fired = await a.drainFiredSchedules();
+    expect(fired).toHaveLength(1);
+    expect(fired[0]?.id).toBe(fireId);
+
+    await a.terminate();
+  });
 });
