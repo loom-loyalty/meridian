@@ -33,8 +33,13 @@ export const transportOrdering: ConformanceScenario = {
 
 export const transportPayloadLimit: ConformanceScenario = {
   name: "transport-payload-limit",
-  description: "payload > 1 MB rejects with MRD-CF-TR-001.",
-  appliesTo: ["miniflare", "real-cf", "in-memory"],
+  description:
+    "payload > 1 MB rejects with MRD-CF-TR-001. Real-CF skips because " +
+    "sending a 1 MB Uint8Array over DO RPC hits the Workers platform " +
+    "argument-size enforcement before our 1 MB validator can run. " +
+    "Miniflare + in-memory exercise the validator directly; platform " +
+    "behavior is covered by a Workers-specific integration test in M3.",
+  appliesTo: ["miniflare", "in-memory"],
   async run(runtime, ctx) {
     const aId = ctx.uniqueId("tr-lim-a");
     const bId = ctx.uniqueId("tr-lim-b");
