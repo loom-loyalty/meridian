@@ -1,6 +1,6 @@
 {
   "name": "@loom-loyalty/meridian-wire",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "MessagePack/WebSocket wire protocol for Meridian agent-to-agent communication",
   "license": "Apache-2.0",
   "type": "module",
