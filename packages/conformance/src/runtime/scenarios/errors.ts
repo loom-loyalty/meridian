@@ -180,10 +180,13 @@ export const errorsCodesReachable: ConformanceScenario = {
     );
 
     // -- Transport: TR-002 zero-recipient broadcast --
-    // Fresh isolated-domain agent so there are no peers.
+    // Per-run unique domain so real-CF's persistent registry from
+    // prior workflow runs can't seed a "peer" that defeats the
+    // zero-recipient assertion.
     const aloneId = ctx.uniqueId("er-alone");
+    const aloneDomain = ctx.uniqueId("er-alone-domain");
     const alone = runtime.agent(aloneId);
-    await alone.spawn({ id: aloneId, domain: "alone-domain-for-errors" });
+    await alone.spawn({ id: aloneId, domain: aloneDomain });
     await expectReject(
       alone.broadcast({}, new TextEncoder().encode("nobody")),
       /MRD-CF-TR-002/,
