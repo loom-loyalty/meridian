@@ -120,6 +120,7 @@ onto your CF account:
 - [**AgentCard `securitySchemes`**](docs/guides/agent-card-security-schemes.md) — how auth is advertised + rotated
 - [**Tenancy invariants**](docs/guides/tenancy-invariants.md) — the seven server-enforced guarantees in multi-tenant mode
 - [**Error catalog**](docs/errors/README.md) — every stable `MRD-CF-*` code with cause + fix
+- [**Roadmap**](ROADMAP.md) — deferred v0.1.5 / v0.2 items, plus what's intentionally out of scope
 
 ### Working on the monorepo
 

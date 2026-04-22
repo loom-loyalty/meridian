@@ -26,6 +26,14 @@ breaking changes bump major.
 
 See the [error catalog index](errors/README.md).
 
+## Roadmap
+
+See [`ROADMAP.md`](../ROADMAP.md) at the repo root for deferred v0.1.5
+/ v0.2 items — auth plugins, admin WebSocket routes, tenant-aggregate
+cost caps, OTEL tracing, and more. Includes a "Not on our roadmap"
+section for operator-space concerns (tenant provisioning, cross-region
+routing, spawn-bomb rate limiting).
+
 ## Contributing
 
 Doc changes don't need a changeset. If a doc references a specific
