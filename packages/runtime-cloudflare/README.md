@@ -3,6 +3,15 @@
 Cloudflare Workers + Durable Objects reference runtime for the
 [Meridian protocol](../../specs/core/RUNTIME-SPEC.md).
 
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/loom-loyalty/meridian/tree/main/examples/cf-hyperdrive-postgres)
+
+One-click deploy drops the `cf-hyperdrive-postgres` example onto
+your account. After the deploy lands, follow
+[DEPLOY.md](../../examples/cf-hyperdrive-postgres/DEPLOY.md) for the
+Hyperdrive + Postgres binding setup (~5 minutes). For a bare-minimum
+scaffold without Postgres, run `pnpm dlx @loom-loyalty/meridian-cli init`
+instead.
+
 ## Status
 
 **v0.1, pre-1.0.** All six stable runtime primitives (lifecycle,

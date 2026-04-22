@@ -126,13 +126,29 @@ curl "$WORKER_URL/insights"
 # }
 ```
 
-Pull the full insight via the agent's state load:
+Pull the inspect payload (handle + schedules + usage + state key
+list + inbox length) via the admin route:
 
 ```bash
-# (v0.1 doesn't expose a direct state-read route; use the dashboard
-#  Workers Logs tab or add your own route via `createMeridianWorker({
-#  routes: {...} })`. M4 ships a /admin/state/:agentId/:key route.)
+MERIDIAN_ADMIN_TOKEN="..."  # your admin token
+curl -H "Authorization: Bearer $MERIDIAN_ADMIN_TOKEN" \
+  "$WORKER_URL/admin/agents/pg-query-optimizer" | jq .
 ```
+
+Or with the CLI:
+
+```bash
+meridian inspect pg-query-optimizer \
+  --experimental \
+  --endpoint="$WORKER_URL" \
+  --token="$MERIDIAN_ADMIN_TOKEN"
+```
+
+v0.1 exposes state-key enumeration (`state.keys`) but not individual
+state values over HTTP — intentional, since state can contain
+anything the agent writes. Read specific values via the
+`routes: {...}` hatch on `createMeridianWorker` (the `/insights`
+route above is one example).
 
 ## Step 7 — Tail logs
 
