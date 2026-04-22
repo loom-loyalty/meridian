@@ -26,6 +26,21 @@ export type { RegistryEnv } from "./registry-do.js";
 export { createMeridianWorker } from "./create-meridian-worker.js";
 export type { MeridianWorkerConfig } from "./create-meridian-worker.js";
 
+// Observability — the one plugin interface we export publicly in
+// v0.1. Adopters swap in OTEL/Datadog/Honeycomb adapters by
+// implementing this interface.
+export {
+  CloudflareAnalyticsPlugin,
+  CloudflareLogsPlugin,
+  CompositeObservabilityPlugin,
+} from "./observability/index.js";
+export type {
+  AnalyticsEngineLike,
+  ObservabilityLogEntry,
+  ObservabilityPlugin,
+  ObservabilitySpan,
+} from "./observability/index.js";
+
 // Error catalog — adopters pattern-match on MRD-\* codes from
 // RuntimeError.context.code. Code catalog is stable within a major
 // version (DX review decision, 2026-04-21).

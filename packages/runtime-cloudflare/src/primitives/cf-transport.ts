@@ -39,8 +39,32 @@ import type { RegistryDurableObject } from "../registry-do.js";
 import type { TransportPlugin } from "./types.js";
 
 const MAIL_PREFIX = "__mail::";
-const MAIL_SEQ_PREFIX = "__mail_seq::";
 const PAYLOAD_MAX_BYTES = 1_000_000; // 1 MB per RUNTIME-SPEC §4.4
+
+/**
+ * Per-(sender, recipient) inbox cap. A single sender can't queue
+ * more than this many unconsumed messages to one recipient before
+ * `deliver` rejects with MRD-CF-TR-003. Prevents an unbounded
+ * queue growth that would eventually breach the DO's 1 MB/key
+ * storage limit as a silent workerd error. Chosen conservatively:
+ * 1024 backlog entries × (modest payload) stays well under 1 MB.
+ * Per-sender partitioning means a misbehaving sender can't
+ * starve well-behaved senders' mailboxes.
+ */
+const INBOX_MAX_PER_SENDER = 1024;
+
+/**
+ * Per-sender mailbox partition. The inbox + next-sequence counter
+ * live in ONE storage value under key `__mail::${fromAgentId}` so a
+ * single `put` is atomic for both fields. The prior "inbox +
+ * seq-counter in two separate keys with two separate puts" design
+ * had a crash window where the seq counter could lag the inbox and
+ * lead to duplicate messageIds on retry.
+ */
+interface MailPartition {
+  inbox: IncomingMessage[];
+  nextSeq: number;
+}
 
 type AnyDurableObjectNamespace = Pick<
   DurableObjectNamespace,
@@ -165,12 +189,38 @@ export class CfTransportPlugin implements TransportPlugin {
     const now = Date.now();
     const myId = await this.getAgentId();
     const mailKey = `${MAIL_PREFIX}${fromAgentId}`;
-    const seqKey = `${MAIL_SEQ_PREFIX}${fromAgentId}`;
 
-    // Per-sender monotonic sequence — enforces in-order per pair
-    // even if workerd reorders concurrent inbound RPCs from different
-    // senders.
-    const nextSeq = ((await this.ctx.storage.get<number>(seqKey)) ?? 0) + 1;
+    // Load the combined partition. DO input gate serializes concurrent
+    // `deliver` calls to this DO so the read/check/write sequence stays
+    // consistent — and because inbox + nextSeq live under ONE key,
+    // a single `put` persists both atomically. Prior design had them
+    // as two keys with two puts; a crash between left the seq lagging
+    // the inbox and produced duplicate messageIds on retry.
+    const partition = (await this.ctx.storage.get<MailPartition>(mailKey)) ?? {
+      inbox: [],
+      nextSeq: 0,
+    };
+
+    // Cap check FIRST — no seq burn, no messageId ghost on a rejected
+    // delivery. Partitioning means this bounds the offending
+    // (sender, recipient) pair without affecting deliveries from
+    // other senders.
+    if (partition.inbox.length >= INBOX_MAX_PER_SENDER) {
+      throw meridianError(
+        "MRD-CF-TR-003",
+        `inbox partition from ${fromAgentId} to ${myId} is at ${INBOX_MAX_PER_SENDER}-message cap; drain or retry later`,
+        {
+          context: {
+            fromAgentId,
+            toAgentId: myId,
+            queued: partition.inbox.length,
+            cap: INBOX_MAX_PER_SENDER,
+          },
+        },
+      );
+    }
+
+    const nextSeq = partition.nextSeq + 1;
     const msg: IncomingMessage = {
       messageId: `${fromAgentId}::${nextSeq}`,
       fromAgentId,
@@ -179,11 +229,9 @@ export class CfTransportPlugin implements TransportPlugin {
       receivedAt: now,
     };
 
-    const inbox =
-      (await this.ctx.storage.get<IncomingMessage[]>(mailKey)) ?? [];
-    inbox.push(msg);
-    await this.ctx.storage.put(mailKey, inbox);
-    await this.ctx.storage.put(seqKey, nextSeq);
+    partition.inbox.push(msg);
+    partition.nextSeq = nextSeq;
+    await this.ctx.storage.put(mailKey, partition);
 
     if (this.onDeliver) {
       // Hook errors don't bubble to the sender; log and swallow so
@@ -205,14 +253,29 @@ export class CfTransportPlugin implements TransportPlugin {
   }
 
   async drainAll(): Promise<IncomingMessage[]> {
-    const all = await this.readMailbox();
-    // Clear every per-sender key. Leave the sequence counters in
-    // place so subsequent deliveries keep monotonic sequence numbers
-    // across a drain.
-    const keys = await this.ctx.storage.list({ prefix: MAIL_PREFIX });
-    for (const k of keys.keys()) {
-      await this.ctx.storage.delete(k);
+    // Read-then-clear. Input-gate serialization means no concurrent
+    // deliver() can interleave with this. Sequence counters live
+    // inside each partition value, so to preserve monotonic
+    // messageIds across drains we rewrite each partition with an
+    // empty inbox but its prior nextSeq — one `put` per partition,
+    // each atomic. A crash mid-loop leaves drained partitions as
+    // {inbox:[], nextSeq:N} and un-drained partitions intact. The
+    // caller already holds the full snapshot in `all`, so
+    // un-drained partitions (if any) would be double-delivered on
+    // the next drain. For M2d acceptably rare (drain doesn't throw
+    // mid-loop under workerd); M2e may revisit with a true txn.
+    const partitions = await this.ctx.storage.list<MailPartition>({
+      prefix: MAIL_PREFIX,
+    });
+    const all: IncomingMessage[] = [];
+    for (const [key, partition] of partitions) {
+      for (const m of partition.inbox) all.push(m);
+      await this.ctx.storage.put(key, {
+        inbox: [],
+        nextSeq: partition.nextSeq,
+      });
     }
+    this.sortMailbox(all);
     return all;
   }
 
@@ -241,19 +304,36 @@ export class CfTransportPlugin implements TransportPlugin {
    * push-order in the stored array.
    */
   private async readMailbox(): Promise<IncomingMessage[]> {
-    const keys = await this.ctx.storage.list<IncomingMessage[]>({
+    const partitions = await this.ctx.storage.list<MailPartition>({
       prefix: MAIL_PREFIX,
     });
     const combined: IncomingMessage[] = [];
-    for (const arr of keys.values()) {
-      for (const m of arr) combined.push(m);
+    for (const partition of partitions.values()) {
+      for (const m of partition.inbox) combined.push(m);
     }
-    combined.sort((a: IncomingMessage, b: IncomingMessage) => {
+    this.sortMailbox(combined);
+    return combined;
+  }
+
+  /**
+   * Cross-sender arrival-ordered sort with tie-break semantics:
+   *   1. receivedAt ascending (primary — wall-clock order)
+   *   2. fromAgentId lexicographic (secondary — deterministic)
+   *   3. NUMERIC per-sender sequence (tertiary — preserves
+   *      in-order-per-pair when two messages from the same sender
+   *      share a millisecond, which lexicographic sort of the
+   *      messageId would get wrong: `sender::10` < `sender::2`).
+   */
+  private sortMailbox(msgs: IncomingMessage[]): void {
+    msgs.sort((a: IncomingMessage, b: IncomingMessage) => {
       const byTime = (a.receivedAt as Timestamp) - (b.receivedAt as Timestamp);
       if (byTime !== 0) return byTime;
-      // Tie-break by messageId to make ordering fully deterministic.
-      return a.messageId.localeCompare(b.messageId);
+      if (a.fromAgentId !== b.fromAgentId) {
+        return a.fromAgentId.localeCompare(b.fromAgentId);
+      }
+      const aSeq = Number(a.messageId.split("::").at(-1) ?? 0);
+      const bSeq = Number(b.messageId.split("::").at(-1) ?? 0);
+      return aSeq - bSeq;
     });
-    return combined;
   }
 }

@@ -286,6 +286,31 @@ export class CfSchedulingPlugin implements SchedulingPlugin {
     return fired;
   }
 
+  /**
+   * Peek at the head of the fired log without removing. Used by
+   * the at-least-once onSchedule hook flow: the hosting DO peeks,
+   * invokes the hook, then ACKs via {@link ackFire}. If the DO
+   * crashes between peek and ack, the fire stays in the log and
+   * the next alarm retries — honoring RUNTIME-SPEC §4.3's
+   * at-least-once delivery contract.
+   */
+  async peekNextFire(): Promise<FiredSchedule | undefined> {
+    const fired = await this.loadFiredLog();
+    return fired[0];
+  }
+
+  /**
+   * Remove a specific fire entry by id after the hook completes
+   * (success OR caught error — adopter code errors are still
+   * considered "delivered"; only DO-crash mid-hook retries). Used
+   * together with {@link peekNextFire} for the at-least-once flow.
+   */
+  async ackFire(fireId: string): Promise<void> {
+    const fired = await this.loadFiredLog();
+    const remaining = fired.filter((f) => f.id !== fireId);
+    await this.ctx.storage.put(FIRED_KEY, remaining);
+  }
+
   // ── internal ─────────────────────────────────────────────
 
   private async persist(schedule: StoredSchedule): Promise<void> {
