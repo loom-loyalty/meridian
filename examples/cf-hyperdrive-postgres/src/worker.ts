@@ -15,7 +15,9 @@ import {
   createMeridianWorker,
 } from "@loom-loyalty/meridian-runtime-cloudflare";
 
-import { pgQueryOptimizer, type PgMonitorEnv } from "./agent.js";
+import type { AgentEnv } from "@loom-loyalty/meridian-runtime-cloudflare";
+
+import { pgQueryOptimizer } from "./agent.js";
 
 export { AgentDurableObject, RegistryDurableObject };
 
@@ -36,7 +38,7 @@ export default createMeridianWorker({
     // the cron schedule, and every poll thereafter runs via the
     // DO's alarm handler.
     "POST /bootstrap": async (_req, env) => {
-      const e = env as PgMonitorEnv;
+      const e = env as AgentEnv;
       const stub = e.AGENT.get(
         e.AGENT.idFromName("pg-query-optimizer"),
       ) as unknown as DurableObjectStub<AgentDurableObject>;
@@ -52,7 +54,7 @@ export default createMeridianWorker({
     // Inspect collected insights + work items without spinning up
     // an admin UI. Drops under a prefix so adopters can list both.
     "GET /insights": async (_req, env) => {
-      const e = env as PgMonitorEnv;
+      const e = env as AgentEnv;
       const stub = e.AGENT.get(
         e.AGENT.idFromName("pg-query-optimizer"),
       ) as unknown as DurableObjectStub<AgentDurableObject>;

@@ -147,12 +147,21 @@ export const pgQueryOptimizer: AgentSpec = defineAgent({
         now - lastEmit > emitCooldownMs
       ) {
         const insight = buildInsight(ctx, row, next, now);
-        const workItem = buildWorkItem(ctx, row, now);
+        // Upsert pattern: the WorkItem id is stable (`wi-pg-${queryid}`)
+        // so re-emissions overwrite the same entry. Load the existing
+        // item first to preserve `createdAt` — only the adopter's
+        // first emission sets the true creation time; subsequent
+        // emissions bump `updatedAt` but leave `createdAt` alone.
+        const workItemId = `wi-pg-${row.queryid.toString()}`;
+        const existing = await ctx.state.load<WorkItem>(
+          `workitems/${workItemId}`,
+        );
+        const workItem = buildWorkItem(ctx, row, now, existing?.createdAt);
 
-        // Persist both into state under stable keys. A sink agent
-        // (or external queue) can list({prefix: "insights/"}) /
-        // list({prefix: "workitems/"}) to pull them out. In v0.1 we
-        // don't ship a transport bridge — adopters wire their own.
+        // Persist both into state. Insights are event-sourced (one
+        // key per observation, timestamped); work items are entities
+        // (single key per queryid, upserted). Adopters list by
+        // prefix to pull either shape.
         await ctx.state.save(`insights/${now}-${key}`, insight);
         await ctx.state.save(`workitems/${workItem.id}`, workItem);
 
@@ -278,6 +287,7 @@ function buildWorkItem(
   ctx: AgentContext,
   row: SlowQueryRow,
   now: Timestamp,
+  createdAt: Timestamp | undefined,
 ): WorkItem {
   // costOfNotBuilding model: total_exec_time is ms spent running this
   // query since stats reset. Assume $0.001 per ms of DB CPU (round
@@ -291,7 +301,13 @@ function buildWorkItem(
   );
 
   return {
-    id: `wi-pg-${row.queryid.toString()}-${now}`,
+    // Stable id keyed only on queryid so repeat emissions (every hour
+    // a query stays slow) upsert the SAME WorkItem rather than
+    // creating duplicates. Downstream systems that dedupe on id get
+    // clean semantics. If adopters need a historical emission trail,
+    // they pull it from the `insights/${now}-${queryid}` keys (which
+    // DO include a timestamp — each observation is its own event).
+    id: `wi-pg-${row.queryid.toString()}`,
     type: "task",
     title: `Investigate slow Postgres query ${row.queryid.toString()}`,
     description: row.query.slice(0, 500),
@@ -318,14 +334,11 @@ function buildWorkItem(
     },
     confidence: Math.min(1.0, Number(row.calls) / 1000),
     status: "proposed",
-    createdAt: now,
+    createdAt: createdAt ?? now,
     updatedAt: now,
   };
 }
 
-// Minimal Hyperdrive binding interface (the real one comes from
-// @cloudflare/workers-types but we keep a local fallback so this
-// file compiles standalone and documents what we rely on).
-interface Hyperdrive {
-  readonly connectionString: string;
-}
+// `Hyperdrive` comes from `@cloudflare/workers-types` as an ambient
+// global. The package is a devDep of this example, so the global is
+// always in scope. See package.json → devDependencies.
