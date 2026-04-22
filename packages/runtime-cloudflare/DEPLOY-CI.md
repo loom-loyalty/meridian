@@ -115,15 +115,38 @@ gh pr edit <number> --add-label e2e-cloudflare
 - **Teardown warning**: usually harmless. The `always()` step catches
   deploy failures where there's nothing to delete yet.
 
-## What grows in M2
+## What the workflow covers today (as of M5)
 
-When the eng-review decision lands (real-CF conformance runs starting
-M2), this workflow gets a new `conformance` step between smoke and
-teardown that invokes the runtime-primitive suite against the live
-deploy. The only piece you need to keep in sync on the CF side is
-making sure the CI account stays within the billing alert you set in
-step 3 — the conformance suite is heavier than the smoke check but
-still well under the free tier.
+The workflow runs on every push to `main` and on PRs labeled
+`e2e-cloudflare`. Each run:
+
+1. **Deploys** `test/test-worker.ts` to `meridian-runtime-cloudflare-ci`
+   on the configured CF account.
+2. **Smoke-checks** the root endpoint — verifies `{runtime, healthy}`
+   shape, retries up to 6× with 5s backoff.
+3. **Runs the full runtime conformance suite** against the live
+   deploy, batched via `/conformance?offset=N&limit=M` to stay under
+   the per-invocation Worker CPU budget. Every scenario that declares
+   `appliesTo: ["real-cf", ...]` runs here — including the M5
+   `concurrency-spawn-broadcast-fanout` fan-out load scenario (N=12
+   parallel spawns + broadcasts) that exercises RegistryDO + mailbox
+   DO concurrency.
+4. **Captures `wrangler tail`** in the background. On failure, the
+   workflow prints DO-side exception stacks from the tail log alongside
+   the failing scenario list, so real-CF-only flakes surface with
+   actionable frames instead of `internal error; reference=XXX`.
+5. **Tears down** the CI worker on success. On failure the worker
+   stays deployed so its Workers Logs tab in the dashboard stays
+   inspectable for post-mortem.
+
+When a scenario passes on real-CF but fails on Miniflare (or
+vice-versa), the parity test in `runtime-cloudflare/test/conformance.test.ts`
+fails loud — Miniflare / in-memory / real-CF are required to have
+identical pass/skip sets.
+
+The **E2E (Cloudflare)** badge in the root `README.md` tracks this
+workflow's status on `main`. Green = every applicable conformance
+scenario passed on real Cloudflare Workers in the latest push.
 
 ## Security notes
 

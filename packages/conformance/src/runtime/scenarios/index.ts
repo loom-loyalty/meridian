@@ -38,6 +38,7 @@ import {
 } from "./resources.js";
 import { experimentalUnavailable } from "./experimental.js";
 import { errorsCategorized, errorsCodesReachable } from "./errors.js";
+import { concurrencySpawnBroadcastFanout } from "./concurrency.js";
 
 import type { ConformanceScenario } from "../types.js";
 
@@ -78,6 +79,7 @@ export const runtimeScenarios: ReadonlyArray<ConformanceScenario> = [
   experimentalUnavailable,
   errorsCategorized,
   errorsCodesReachable,
+  concurrencySpawnBroadcastFanout,
 ];
 
 export * from "./lifecycle.js";
@@ -87,3 +89,4 @@ export * from "./transport.js";
 export * from "./resources.js";
 export * from "./experimental.js";
 export * from "./errors.js";
+export * from "./concurrency.js";

@@ -99,7 +99,7 @@ export default createMeridianWorker({
   routes: {
     "GET /conformance": async (req, env) => {
       const url = new URL(req.url);
-      // Batching support: the suite runs ~31 scenarios serially, each
+      // Batching support: the suite runs ~32 scenarios serially, each
       // of which hits 5-25 DO RPCs. Cold-start DOs + serial RPC cost
       // pushes the whole suite over the ~30s Worker CPU budget on
       // real CF. Accept `?offset=N&limit=M` so the E2E workflow can
