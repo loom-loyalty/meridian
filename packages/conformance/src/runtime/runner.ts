@@ -61,26 +61,47 @@ export async function runRuntimeConformance(
       });
     } catch (err) {
       // Cloudflare wraps DO exceptions as "internal error; reference=XXX"
-      // which hides the real throw. Include the first few stack frames
-      // so adopters (and the real-CF workflow) can pinpoint the divergence.
-      const e = err as Error;
-      const message = e.message || String(err);
-      const stackHead = e.stack
-        ? e.stack.split("\n").slice(0, 6).join(" | ")
-        : "no-stack";
-      const causeMsg = (e as { cause?: Error }).cause?.message;
+      // which hides the real throw. We expand the failure reason with
+      // everything we can extract: constructor name, message, cause
+      // chain, first 6 stack frames. This is the diagnostic surface
+      // the real-CF E2E workflow uses when scenarios fail opaquely.
       results.push({
         scenario: scenario.name,
         status: "failed",
-        reason: causeMsg
-          ? `${message} | cause: ${causeMsg} | stack: ${stackHead}`
-          : `${message} | stack: ${stackHead}`,
+        reason: formatFailure(err),
         durationMs: Date.now() - startedAt,
       });
     }
   }
 
   return results;
+}
+
+function formatFailure(err: unknown): string {
+  if (err === null || err === undefined) return `thrown: ${String(err)}`;
+  const e = err as Error & { code?: string; cause?: unknown };
+  const ctor = e.constructor?.name ?? "Error";
+  const code = e.code ? ` [${e.code}]` : "";
+  const message = e.message || String(err);
+  const stackHead = e.stack
+    ? e.stack.split("\n").slice(0, 6).join(" | ")
+    : "no-stack";
+
+  // Walk the cause chain up to 3 levels deep — `new Error(msg, {cause})`
+  // preserves the originating throw across abstraction boundaries and
+  // adopters / the CF adapter use this pattern in meridianError.
+  const causes: string[] = [];
+  let cur: unknown = e.cause;
+  for (let depth = 0; depth < 3 && cur; depth++) {
+    const cause = cur as Error & { code?: string; cause?: unknown };
+    const causeCtor = cause.constructor?.name ?? "Error";
+    const causeCode = cause.code ? ` [${cause.code}]` : "";
+    causes.push(`${causeCtor}${causeCode}: ${cause.message || String(cur)}`);
+    cur = cause.cause;
+  }
+  const causeStr = causes.length > 0 ? ` | cause: ${causes.join(" <- ")}` : "";
+
+  return `${ctor}${code}: ${message}${causeStr} | stack: ${stackHead}`;
 }
 
 function makeContext(scenarioName: string): ScenarioContext {

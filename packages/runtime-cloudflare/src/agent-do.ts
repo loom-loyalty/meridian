@@ -192,20 +192,33 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   }
 
   // ── State ────────────────────────────────────────────────
+  //
+  // Every state method gates on `requireMeta()` so pre-spawn writes
+  // throw MRD-CF-LC-002 consistently with the rest of the RPC surface.
+  // Prior versions skipped the check, which let adopters write to a
+  // DO that had never been spawned — the data would then collide with
+  // a later spawn's namespace. The in-memory `createTestRuntime()`
+  // has always enforced this; missing it on the CF adapter was a
+  // parity bug the `errors-codes-reachable` conformance scenario
+  // surfaced (pre-spawn `save` resolved on CF but threw on in-memory).
 
   async save(key: string, value: unknown): Promise<void> {
+    await this.lifecycle.requireMeta();
     return this.state.save(key, value);
   }
 
   async load<T = unknown>(key: string): Promise<T | undefined> {
+    await this.lifecycle.requireMeta();
     return this.state.load<T>(key);
   }
 
   async delete(key: string): Promise<void> {
+    await this.lifecycle.requireMeta();
     return this.state.delete(key);
   }
 
   async list(opts?: ListOptions): Promise<ListResult> {
+    await this.lifecycle.requireMeta();
     return this.state.list(opts);
   }
 
@@ -216,6 +229,7 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
    * functions across DO boundaries).
    */
   async incrementAtomic(key: string, delta = 1): Promise<number> {
+    await this.lifecycle.requireMeta();
     return this.state.update<number>(key, (c) => (c ?? 0) + delta);
   }
 
@@ -275,11 +289,13 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
 
   /** Snapshot the inbox (does NOT clear). */
   async receiveAll(): Promise<IncomingMessage[]> {
+    await this.lifecycle.requireMeta();
     return this.transport.receiveAll();
   }
 
   /** Pull-and-clear the inbox. Stable public API. */
   async drainInbox(): Promise<IncomingMessage[]> {
+    await this.lifecycle.requireMeta();
     return this.transport.drainAll();
   }
 

@@ -100,6 +100,119 @@ export const transportBroadcast: ConformanceScenario = {
   },
 };
 
+export const transportInboxCap: ConformanceScenario = {
+  name: "transport-inbox-cap",
+  description:
+    "per-(sender, recipient) inbox caps at 1024 messages; 1025th rejects with MRD-CF-TR-003. RUNTIME-SPEC §4.4.",
+  // Real-CF skipped: 1024 serial RPCs exceed the Worker fetch's CPU
+  // envelope on the shared /conformance invocation. Covered by
+  // runtime-cloudflare's transport.test.ts inbox-cap case instead.
+  appliesTo: ["miniflare", "in-memory"],
+  async run(runtime, ctx) {
+    const senderId = ctx.uniqueId("tr-cap-s");
+    const recvId = ctx.uniqueId("tr-cap-r");
+    const sender = runtime.agent(senderId);
+    const recv = runtime.agent(recvId);
+    await sender.spawn({ id: senderId, domain: "conformance" });
+    await recv.spawn({ id: recvId, domain: "conformance" });
+
+    const tiny = new Uint8Array([0]);
+    for (let i = 0; i < 1024; i++) {
+      await sender.send(recvId, tiny);
+    }
+    // The 1025th delivery from this sender must reject.
+    await expectReject(
+      sender.send(recvId, tiny),
+      /MRD-CF-TR-003/,
+      "1025th send from same sender hits cap",
+    );
+
+    // Draining releases capacity; a subsequent send succeeds.
+    await recv.drainInbox();
+    await sender.send(recvId, tiny);
+
+    await sender.terminate();
+    await recv.terminate();
+  },
+};
+
+export const transportBroadcastCrossDomain: ConformanceScenario = {
+  name: "transport-broadcast-cross-domain",
+  description:
+    "broadcast with explicit selector.domain targets agents in that domain, not the sender's. RUNTIME-SPEC §4.4.",
+  appliesTo: ["miniflare", "real-cf", "in-memory"],
+  async run(runtime, ctx) {
+    const senderId = ctx.uniqueId("tr-cross-s");
+    const targetId = ctx.uniqueId("tr-cross-t");
+    const bystanderId = ctx.uniqueId("tr-cross-b");
+
+    const sender = runtime.agent(senderId);
+    const target = runtime.agent(targetId);
+    const bystander = runtime.agent(bystanderId);
+
+    // Three domains: sender in "alpha", target in "beta" (what the
+    // broadcast targets), bystander in "alpha" (same as sender, but
+    // shouldn't receive because we target "beta").
+    await sender.spawn({ id: senderId, domain: "alpha" });
+    await target.spawn({ id: targetId, domain: "beta" });
+    await bystander.spawn({ id: bystanderId, domain: "alpha" });
+
+    const receipt = await sender.broadcast(
+      { domain: "beta" },
+      new TextEncoder().encode("cross-domain"),
+    );
+    expect(receipt.recipientCount, "cross-domain recipientCount").toBe(1);
+
+    expect((await target.receiveAll()).length, "target inbox").toBe(1);
+    expect(
+      (await bystander.receiveAll()).length,
+      "bystander in sender's own domain — not targeted",
+    ).toBe(0);
+    expect((await sender.receiveAll()).length, "sender self-deliver").toBe(0);
+
+    await sender.terminate();
+    await target.terminate();
+    await bystander.terminate();
+  },
+};
+
+export const transportBroadcastLateSpawn: ConformanceScenario = {
+  name: "transport-broadcast-late-spawn",
+  description:
+    "agents spawned AFTER a broadcast do not receive the earlier message. RUNTIME-SPEC §4.4: 'matches selector at time of call; late-spawned agents don't receive'.",
+  appliesTo: ["miniflare", "real-cf", "in-memory"],
+  async run(runtime, ctx) {
+    const senderId = ctx.uniqueId("tr-late-s");
+    const firstId = ctx.uniqueId("tr-late-first");
+    const lateId = ctx.uniqueId("tr-late-late");
+
+    const sender = runtime.agent(senderId);
+    const first = runtime.agent(firstId);
+
+    await sender.spawn({ id: senderId, domain: "late-domain" });
+    await first.spawn({ id: firstId, domain: "late-domain" });
+
+    const receipt = await sender.broadcast(
+      {},
+      new TextEncoder().encode("before-late-spawn"),
+    );
+    expect(receipt.recipientCount, "broadcast recipientCount").toBe(1);
+    expect((await first.receiveAll()).length, "first agent received").toBe(1);
+
+    // Late-spawn AFTER the broadcast.
+    const late = runtime.agent(lateId);
+    await late.spawn({ id: lateId, domain: "late-domain" });
+    expect(
+      (await late.receiveAll()).length,
+      "late agent has empty inbox (not retroactive)",
+    ).toBe(0);
+
+    await sender.terminate();
+    await first.terminate();
+    await late.terminate();
+  },
+};
+
 export const transportDrain: ConformanceScenario = {
   name: "transport-drain",
   description:
