@@ -1,5 +1,184 @@
 # @loom-loyalty/meridian-conformance
 
+## 0.2.0
+
+### Minor Changes
+
+- fdfeea7: M2f Phase 1: conformance coverage expansion + 2 real-CF adapter bug
+  fixes the new scenarios surfaced.
+
+  **New conformance scenarios (6 added; suite now runs 31 scenarios)**
+  - `state-list-prefix` — `list({prefix})` returns only prefix-matching
+    keys, alphabetically sorted.
+  - `state-list-pagination` — `list({limit, cursor})` pages through keys
+    with no duplicates. Surfaces a bug in the CF adapter (see below).
+  - `transport-inbox-cap` — per-(sender, recipient) inbox caps at 1024
+    messages; 1025th throws `MRD-CF-TR-003`. Miniflare + in-memory only
+    (1024 serial sends exceed the Worker fetch CPU envelope under
+    `/conformance`).
+  - `transport-broadcast-cross-domain` — explicit `selector.domain`
+    targets that domain's agents, not the sender's.
+  - `transport-broadcast-late-spawn` — agents spawned AFTER a broadcast
+    do not receive the prior message (RUNTIME-SPEC §4.4).
+  - `errors-codes-reachable` — every MRD-CF-\* code in the stable catalog
+    is reachable from the public RPC surface. Catches drift where a code
+    is defined but no public path throws it.
+
+  **Runtime-cloudflare bug fixes** (both surfaced by the new scenarios)
+  - **`cf-state.ts:list()` cursor was inclusive.** DO storage.list
+    treats `start` as inclusive, so passing a raw cursor duplicated the
+    cursor key as the first entry of the next page — `state-list-
+pagination` returned `["item-01","item-02","item-03","item-03",
+"item-04","item-05","item-05",...]`. Fixed by appending
+    `String.fromCharCode(0)` to the cursor to get the strict-greater
+    successor. No valid adopter key sorts between `${cursor}` and
+    `${cursor}\0`, so pagination is now duplicate-free.
+  - **`agent-do.ts` state methods didn't gate on `requireMeta()`.**
+    Pre-spawn `save` / `load` / `delete` / `list` /
+    `incrementAtomic` / `receiveAll` / `drainInbox` resolved against
+    the CF adapter but threw `MRD-CF-LC-002` against `createTestRuntime()`
+    — a real parity bug the `errors-codes-reachable` scenario caught.
+    Fix: every state- and inbox-read method now `await
+lifecycle.requireMeta()` before delegating. One `MRD-CF-LC-002`
+    error code covers "agent not present" across every adopter-facing
+    RPC (pre-spawn or post-terminate).
+    - `walking-skeleton.test.ts` post-terminate `load` assertion updated
+      to expect the `MRD-CF-LC-002` reject (the DO is "dead" until a
+      new spawn rebinds it; returning `undefined` silently was
+      inconsistent with every other RPC).
+
+  **Runner diagnostic expansion**
+
+  `runner.ts` failure-reason formatter now captures:
+  - `err.constructor.name` (e.g. `RuntimeError` vs `TypeError` vs
+    `AssertionError` — distinguishes MRD-CF throws from unexpected
+    JS errors)
+  - `err.code` when present (bracketed after the constructor)
+  - Up to 3 levels of `err.cause` chain (`new Error(msg, {cause})`
+    propagation)
+  - First 6 stack frames
+
+  Prior format lost the cause chain and didn't reveal whether the
+  error type matched expectations. Next real-CF failure produces
+  meaningfully more signal.
+
+  **Test totals**
+  - `runtime-cloudflare/test/`: 87 tests green (unchanged count;
+    conformance suite now runs 31 scenarios internally, up from 25)
+  - `conformance/src/runtime/scenarios/`: 31 scenarios published
+
+  **What this does NOT cover (deferred)**
+  - `transport-at-least-once` (onMessage hook-throw retry) — requires
+    `defineAgent` from scenario code; not in the Runtime contract yet.
+    Covered by `runtime-cloudflare/test/hooks.test.ts` A3 suite.
+  - `transport-hibernation-replay` — real-CF only, needs external
+    orchestration (write → sleep through eviction window → read).
+    Workflow-level, M2f Phase 2.
+  - `scheduling-coalesce` / `scheduling-durability` — same shape as
+    hibernation-replay. Workflow-level.
+  - `resources-setlimits-inflight` — needs `beginOperation` on the
+    public RPC surface; it's currently hook-only. API expansion
+    decision for v0.2 or adopter-facing testing API.
+  - `observability-dimensions` — needs Analytics Engine capturing or
+    console.error spy (not reachable through the Runtime contract).
+    Covered by `runtime-cloudflare/test/observability.test.ts`.
+
+- edc9c23: M2e: runtime conformance suite + in-memory test runtime + E2E
+  conformance step.
+
+  **New subpath** `@loom-loyalty/meridian-conformance/runtime`
+  - `Runtime` contract — the abstraction scenarios run against. Adopter
+    runtimes (CF, in-memory, future platforms) implement `.agent(id)`,
+    `.runAlarm(id)`, `.sleep(ms)`, and advertise `.kind:
+"in-memory" | "miniflare" | "real-cf"`.
+  - `AgentRef` — per-agent RPC surface the scenarios call into. Mirrors
+    `AgentDurableObject`'s public methods, scoped to a bound id. New
+    methods added here as the suite grows.
+  - `runRuntimeConformance(runtime, scenarios, opts?)` — walks the
+    scenario list, gates each by `appliesTo` against the runtime kind,
+    collects `{scenario, status, reason, durationMs}` results.
+    Scenarios that don't apply are `skipped`, not silently dropped —
+    adopters see the coverage they're missing under their adapter.
+  - `summarizeConformance(results)` — reduce to `{ok, passed, failed,
+skipped, total}`.
+  - `expect(actual, desc)` / `expectReject(promise, pattern, desc)` —
+    tiny synchronous assertion primitives so adopters can run the suite
+    from a plain node script without pulling vitest.
+
+  **Scenarios (25 total)**
+
+  Lifecycle (3): basic, idempotent, requires-spawn.
+  State (5): isolation, reserved-keys, size-limits, concurrent-update,
+  durability (real-cf only).
+  Scheduling (4): bounds, cron-bounds, cancel, fires (miniflare+in-memory
+  only — workerd alarm scheduler is outside the Worker invocation
+  budget).
+  Transport (4): ordering, payload-limit, broadcast, drain.
+  Resources (7): limits-round-trip, enforcement, negative-reports,
+  attribution, usage-shape, warnings, latency.
+  Experimental (1): unavailable.
+  Errors (1): categorized MRD-CF-\* pattern-match.
+
+  **In-memory test runtime** (`@loom-loyalty/meridian-runtime-cloudflare/testing`)
+  - `createTestRuntime()` returns a `Runtime` whose state lives in
+    process-local `Map`s. Adopter unit tests exercise agent hooks with
+    millisecond setup — no Miniflare, no `wrangler dev`, no DO.
+  - Implements every primitive the scenarios exercise:
+    lifecycle, state (with 1024 B key / 1 MB value caps + reserved `__`
+    prefix), scheduling (1s/365d bounds, `croner` cron parsing),
+    transport (sender-partitioned inbox with 1024-message cap +
+    MRD-CF-TR-003), resources (all MRD-CF-RS-\* enforcement),
+    experimental (UNAVAILABLE throws).
+  - Exposes `inspect(id)` + `seed(fixture)` escape hatches for
+    debugging a failed scenario or pre-loading fixtures.
+
+  **Parity test** (`runtime-cloudflare/test/conformance.test.ts`)
+
+  Three suites:
+  1. Miniflare adapter runs every Miniflare-applicable scenario.
+  2. In-memory runtime runs every in-memory-applicable scenario.
+  3. Parity: Miniflare and in-memory MUST report the same
+     `{scenario, status}` pair set. Divergence = red build.
+
+  **E2E conformance step** (`.github/workflows/e2e-cloudflare.yml`)
+
+  The workflow now curls `/conformance` on the live-deployed worker
+  after the smoke check. The endpoint runs the suite on-box with
+  `kind: "real-cf"` and returns `{summary, results}` JSON. Workflow
+  asserts `summary.failed === 0` and `summary.passed > 0`.
+
+  Real-CF-applicable scenarios (23 of 25) cover every adopter-facing
+  primitive the runtime ships in v0.1. `scheduling-fires` and
+  `state-durability` skip:
+  - `scheduling-fires` — workerd fires alarms outside the Worker
+    invocation budget; M3 example agents cover the live-alarm path.
+  - `state-durability` — workerd does not expose hibernation triggers
+    to user code; M3 longer-running integration driver covers
+    cross-hibernation durability.
+
+  **Test totals**
+  - `runtime-cloudflare/test/`: 84 → 87 tests (added 3 conformance
+    describe blocks).
+  - `conformance/src/runtime/scenarios/`: 25 scenarios published.
+
+  **Public API additions**
+
+  From `@loom-loyalty/meridian-conformance/runtime`:
+  - `Runtime`, `AgentRef`, `ConformanceScenario`, `ConformanceResult`,
+    `ScenarioContext`, `RunConformanceOptions`, `AgentFixture` types
+  - `runRuntimeConformance`, `summarizeConformance` functions
+  - `expect`, `expectReject` assertion primitives
+  - `runtimeScenarios` const — the v0.1 scenario list
+  - Per-primitive named scenario exports (`lifecycleBasic`,
+    `stateIsolation`, etc.) so adopters can run a subset.
+
+  From `@loom-loyalty/meridian-runtime-cloudflare/testing`:
+  - `createTestRuntime()` — returns `TestRuntime extends Runtime`
+  - `TestRuntime.inspect(id)` / `TestRuntime.seed(fixture)`
+
+  **Closes M2.** Next milestone is M3 (example agents:
+  `cf-hyperdrive-postgres` + `docker-kafka`).
+
 ## 0.1.1
 
 ### Patch Changes
