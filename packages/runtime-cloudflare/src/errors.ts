@@ -41,6 +41,9 @@ export type MeridianErrorCode =
   | "MRD-CF-SC-002" // scheduleAt delay above 365-day maximum
   | "MRD-CF-SC-003" // cron pattern invalid (croner parse failure)
   | "MRD-CF-SC-004" // scheduleId not found on cancel
+  // Transport
+  | "MRD-CF-TR-001" // payload exceeds 1 MB wire limit
+  | "MRD-CF-TR-002" // broadcast selector produced zero recipients
   // Experimental
   | "MRD-CF-EX-001" // snapshotState unavailable in v0.1
   | "MRD-CF-EX-002" // SpawnConfig.fromSnapshot rejected in v0.1
@@ -114,6 +117,16 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
     category: "not_found",
     retryable: false,
     summary: "scheduleId not registered on this agent",
+  },
+  "MRD-CF-TR-001": {
+    category: "invalid_argument",
+    retryable: false,
+    summary: "transport payload exceeds 1 MB wire limit (RUNTIME-SPEC §4.4)",
+  },
+  "MRD-CF-TR-002": {
+    category: "not_found",
+    retryable: false,
+    summary: "broadcast selector matched zero registered agents",
   },
   "MRD-CF-EX-001": {
     category: "unavailable",

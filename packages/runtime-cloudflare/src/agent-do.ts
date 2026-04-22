@@ -2,37 +2,44 @@
  * AgentDurableObject — composed plugin surface.
  *
  * One DO instance per spawned agent (`env.AGENT.idFromName(agentId)`).
- * This class is the RPC boundary Miniflare and real CF both speak; it
- * delegates every method to the matching internal plugin
- * (`CfLifecyclePlugin`, `CfStatePlugin`, etc). Plugins live in
- * `./primitives/`; they are NOT exported from the package in v0.1 per
- * the eng-review reframing (internal seams for legibility, public
- * plugin API in v0.2 once an external plugin implementation exists).
+ * This class is the RPC boundary Miniflare and real CF both speak;
+ * it delegates every method to the matching internal plugin
+ * (`CfLifecyclePlugin`, `CfStatePlugin`, `CfSchedulingPlugin`,
+ * `CfTransportPlugin`), and invokes adopter-supplied hooks from
+ * the `AgentSpec` registered via `defineAgent()` at the right
+ * points (post-spawn, post-deliver, pre-terminate).
  *
- * Primitives implemented in M2a:
+ * Primitives implemented in M2c:
  *   • Lifecycle — spawn / suspend / resume / terminate / get / exists
- *                 (+ snapshotState @experimental → UNAVAILABLE)
- *   • State     — save / load / delete / list / update
- *                 (+ 1 MB value / 1024 B key / reserved-prefix validation)
+ *                 (+ snapshotState @experimental → UNAVAILABLE,
+ *                  + identity guard MRD-CF-LC-005)
+ *   • State     — save / load / delete / list / incrementAtomic
+ *   • Scheduling — scheduleAt / scheduleCron / cancelSchedule /
+ *                  listSchedules / drainFiredSchedules (cron
+ *                  coalesce + alarm-backed)
+ *   • Transport — send / broadcast / deliver / receiveAll / drainAll
+ *                 (sender-partitioned mailbox, 1 MB limit, hooks)
  *
- * Transport primitives still inherit the M1 inbox-append model;
- * M2c refactors them to the sender-partitioned-per-recipient mailbox
- * and wires the user's `onMessage` hook. Scheduling / resources /
- * observability land in M2b / M2d.
+ * Resources + Observability land in M2d.
  */
 
 import { DurableObject } from "cloudflare:workers";
 import type {
   AgentHandle,
   AgentId,
+  AgentSelector,
+  BroadcastReceipt,
+  IncomingMessage,
   ListOptions,
   ListResult,
+  MessageReceipt,
   ScheduleId,
   ScheduleInfo,
   SpawnConfig,
   Timestamp,
 } from "@loom-loyalty/meridian-types";
 
+import { getAgentSpec, type AgentContext } from "./define-agent.js";
 import {
   CfLifecyclePlugin,
   type LifecycleEnv,
@@ -42,7 +49,7 @@ import {
   type FiredSchedule,
 } from "./primitives/cf-scheduling.js";
 import { CfStatePlugin } from "./primitives/cf-state.js";
-
+import { CfTransportPlugin } from "./primitives/cf-transport.js";
 import type { RegistryDurableObject } from "./registry-do.js";
 
 export interface AgentEnv extends LifecycleEnv {
@@ -50,18 +57,11 @@ export interface AgentEnv extends LifecycleEnv {
   REGISTRY: DurableObjectNamespace<RegistryDurableObject>;
 }
 
-export interface InboxEntry {
-  fromAgentId: AgentId;
-  payload: Uint8Array;
-  receivedAt: Timestamp;
-}
-
-const INBOX_KEY = "__inbox__";
-
 export class AgentDurableObject extends DurableObject<AgentEnv> {
   private readonly lifecycle: CfLifecyclePlugin;
   private readonly state: CfStatePlugin;
   private readonly scheduling: CfSchedulingPlugin;
+  private readonly transport: CfTransportPlugin;
 
   constructor(ctx: DurableObjectState, env: AgentEnv) {
     super(ctx, env);
@@ -69,19 +69,24 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     this.state = new CfStatePlugin(ctx);
     this.scheduling = new CfSchedulingPlugin(
       ctx,
-      // Resolve agent id from the lifecycle plugin at call time so the
-      // scheduling plugin doesn't peek into lifecycle's storage layout.
       async () => (await this.lifecycle.requireMeta()).id,
+    );
+    this.transport = new CfTransportPlugin(
+      ctx,
+      env,
+      async () => (await this.lifecycle.requireMeta()).id,
+      async () => (await this.lifecycle.requireMeta()).domain,
+      // Inbound message hook: if the adopter's AgentSpec has an
+      // `onMessage` defined, fire it with a context bound to this DO.
+      async (msg) => this.invokeOnMessage(msg),
     );
   }
 
   /**
    * DO alarm hook — workerd calls this when the stored alarm fires.
-   * The scheduling plugin walks every registered schedule, fires the
-   * due ones (including cron coalescing for ticks missed during DO
-   * downtime), and reprograms the alarm for the next due schedule.
-   * Any other future primitive that uses alarms (e.g. delayed
-   * at-least-once redelivery in M2c) hooks in here too.
+   * Delegates to the scheduling plugin, which walks every due
+   * schedule, fires the ones that are up, advances cron schedules,
+   * and reprograms the alarm.
    */
   async alarm(): Promise<void> {
     await this.scheduling.onAlarm();
@@ -90,7 +95,20 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   // ── Lifecycle ────────────────────────────────────────────
 
   async spawn(config: SpawnConfig): Promise<AgentHandle> {
-    return this.lifecycle.spawn(config);
+    const handle = await this.lifecycle.spawn(config);
+    // Fire the adopter's onSpawn hook if defined. Errors don't fail
+    // the spawn (the DO is already persisted); they're logged.
+    const spec = getAgentSpec(handle.id);
+    if (spec?.onSpawn) {
+      try {
+        await spec.onSpawn(this.contextFor(handle));
+      } catch (err) {
+        console.warn(
+          `[agent ${handle.id}] onSpawn hook threw: ${(err as Error).message}`,
+        );
+      }
+    }
+    return handle;
   }
 
   async suspend(): Promise<void> {
@@ -102,6 +120,24 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
   }
 
   async terminate(): Promise<void> {
+    // Fire the adopter's onTerminate hook BEFORE wiping so they
+    // still have access to state.load / transport / etc. If the
+    // hook throws, we log and proceed with termination anyway —
+    // a stuck hook should not prevent deletion.
+    const exists = await this.lifecycle.exists();
+    if (exists) {
+      const handle = await this.lifecycle.get();
+      const spec = getAgentSpec(handle.id);
+      if (spec?.onTerminate) {
+        try {
+          await spec.onTerminate(this.contextFor(handle));
+        } catch (err) {
+          console.warn(
+            `[agent ${handle.id}] onTerminate hook threw: ${(err as Error).message}`,
+          );
+        }
+      }
+    }
     return this.lifecycle.terminate();
   }
 
@@ -135,33 +171,11 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     return this.state.list(opts);
   }
 
-  // `update()` deliberately does NOT appear on the DO RPC surface:
-  // DO RPC uses structured clone, which cannot serialize functions,
-  // so an `updater` callback sent from outside the DO would throw
-  // `DataCloneError: #<RpcPromise> could not be cloned`. The plugin
-  // method (`this.state.update`) still runs fine INSIDE the DO — M2c
-  // wires it into `defineAgent`'s context helpers so adopter code
-  // called via the onMessage/onSchedule hooks has full access. For
-  // external atomic updates from a Worker fetch handler, the idiom
-  // is to call a specific RPC method (see `incrementAtomic` below)
-  // that wraps the update pattern internally.
-
   /**
    * Atomic integer increment. Public API — stable within a major
-   * version.
-   *
-   * This is the canonical pattern for atomic state updates from
-   * OUTSIDE the DO (e.g. a Worker fetch handler). The underlying
-   * state plugin's `update(key, fn)` primitive takes a function
-   * which can't cross the DO RPC boundary via structured clone, so
-   * data-shaped RPCs like this one wrap the common cases. Adopter
-   * code running INSIDE the DO (via defineAgent hooks, arriving in
-   * M2c) has full access to the generic update() through the
-   * authoring context.
-   *
-   * Pattern works for any value that supports "seed if undefined,
-   * add delta" semantics. For richer transformers, adopters define
-   * their own DO subclass methods following the same pattern.
+   * version. See JSDoc in M2a review for why generic update(key, fn)
+   * is NOT on the RPC surface (structured-clone can't serialize
+   * functions across DO boundaries).
    */
   async incrementAtomic(key: string, delta = 1): Promise<number> {
     return this.state.update<number>(key, (c) => (c ?? 0) + delta);
@@ -189,38 +203,83 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     return this.scheduling.listSchedules();
   }
 
-  /**
-   * Pull-and-clear the fired-schedule log. Public API — stable
-   * within a major version.
-   *
-   * Each call returns every schedule fire that happened since the
-   * previous drain, then empties the log. M2c adds a direct
-   * `onSchedule` user hook (invoked inside the DO at fire time) for
-   * reactive handling; `drainFiredSchedules()` remains as the
-   * batch-poll companion — useful for inspection, replay, and
-   * adopters who prefer explicit pull semantics.
-   */
   async drainFiredSchedules(): Promise<FiredSchedule[]> {
     return this.scheduling.drainFiredSchedules();
   }
 
-  // ── Transport (M1 inbox model; M2c replaces) ─────────────
+  // ── Transport ────────────────────────────────────────────
 
-  async sendTo(targetAgentId: AgentId, payload: Uint8Array): Promise<void> {
-    const meta = await this.lifecycle.requireMeta();
-    const targetStub = this.env.AGENT.get(
-      this.env.AGENT.idFromName(targetAgentId),
-    ) as unknown as DurableObjectStub<AgentDurableObject>;
-    await targetStub.deliver(meta.id, payload);
+  async send(toAgentId: AgentId, payload: Uint8Array): Promise<MessageReceipt> {
+    await this.lifecycle.requireMeta();
+    return this.transport.send(toAgentId, payload);
   }
 
-  async deliver(fromAgentId: AgentId, payload: Uint8Array): Promise<void> {
-    const inbox = (await this.ctx.storage.get<InboxEntry[]>(INBOX_KEY)) ?? [];
-    inbox.push({ fromAgentId, payload, receivedAt: Date.now() });
-    await this.ctx.storage.put(INBOX_KEY, inbox);
+  async broadcast(
+    selector: AgentSelector,
+    payload: Uint8Array,
+  ): Promise<BroadcastReceipt> {
+    await this.lifecycle.requireMeta();
+    return this.transport.broadcast(selector, payload);
   }
 
-  async receive(): Promise<InboxEntry[]> {
-    return (await this.ctx.storage.get<InboxEntry[]>(INBOX_KEY)) ?? [];
+  /**
+   * Receive side of the transport primitive — called by the sending
+   * DO's transport plugin via DO RPC. Returns the `IncomingMessage`
+   * so the sender can build a `MessageReceipt` with the recipient's
+   * assigned sequence number and timestamp.
+   */
+  async deliver(
+    fromAgentId: AgentId,
+    payload: Uint8Array,
+  ): Promise<IncomingMessage> {
+    return this.transport.deliver(fromAgentId, payload);
+  }
+
+  /** Snapshot the inbox (does NOT clear). */
+  async receiveAll(): Promise<IncomingMessage[]> {
+    return this.transport.receiveAll();
+  }
+
+  /** Pull-and-clear the inbox. Stable public API. */
+  async drainInbox(): Promise<IncomingMessage[]> {
+    return this.transport.drainAll();
+  }
+
+  // ── Internal: onMessage hook wiring ──────────────────────
+
+  private async invokeOnMessage(msg: IncomingMessage): Promise<void> {
+    const handle = await this.lifecycle.get();
+    const spec = getAgentSpec(handle.id);
+    if (!spec?.onMessage) return;
+    await spec.onMessage(this.contextFor(handle), msg);
+  }
+
+  /**
+   * Build the context object passed to adopter hooks. Methods are
+   * thin wrappers over the plugin instances — adopter hooks run
+   * inside this DO's isolate, so the `update(key, fn)` path works
+   * (no structured-clone boundary for the updater function).
+   */
+  private contextFor(handle: AgentHandle): AgentContext {
+    return {
+      id: handle.id,
+      domain: handle.domain,
+      state: {
+        save: (k, v) => this.state.save(k, v),
+        load: (k) => this.state.load(k),
+        delete: (k) => this.state.delete(k),
+        list: (opts) => this.state.list(opts),
+        update: (k, fn) => this.state.update(k, fn),
+      },
+      transport: {
+        send: (to, payload) => this.transport.send(to, payload),
+        broadcast: (sel, payload) => this.transport.broadcast(sel, payload),
+      },
+      schedule: {
+        at: (when, payload) => this.scheduling.scheduleAt(when, payload),
+        cron: (cron, payload) => this.scheduling.scheduleCron(cron, payload),
+        cancel: (id) => this.scheduling.cancel(id),
+      },
+    };
   }
 }

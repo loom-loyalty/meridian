@@ -17,8 +17,13 @@
 
 import type {
   AgentHandle,
+  AgentId,
+  AgentSelector,
+  BroadcastReceipt,
+  IncomingMessage,
   ListOptions,
   ListResult,
+  MessageReceipt,
   ScheduleId,
   ScheduleInfo,
   SpawnConfig,
@@ -81,4 +86,33 @@ export interface SchedulingPlugin {
    * `nextFireAt` advanced; once schedules are removed post-fire.
    */
   onAlarm(): Promise<void>;
+}
+
+/**
+ * Agent-to-agent transport for a single DO instance.
+ *
+ * Mailbox layout per the eng-review decision (2026-04-21): one
+ * AgentDurableObject per recipient, with incoming messages
+ * partitioned by sender via `__mail::${fromAgentId}` keys. Per-sender
+ * monotonic sequence numbers provide the RUNTIME-SPEC §4.4
+ * "at-least-once + in-order per sender/recipient pair" guarantee
+ * without forcing one DO per (sender, recipient) pair.
+ *
+ * `onDeliver` is the hook the DO calls right after a message lands
+ * in the inbox. In M2c that hook invokes the user's AgentSpec
+ * `onMessage` if defined; in M2b the same slot is unused (inbox
+ * polling via `receive()` from drainFiredMessages-style companion).
+ */
+export interface TransportPlugin {
+  send(toAgentId: AgentId, payload: Uint8Array): Promise<MessageReceipt>;
+  broadcast(
+    selector: AgentSelector,
+    payload: Uint8Array,
+  ): Promise<BroadcastReceipt>;
+  /** Receive side — appends to the sender-partitioned inbox. */
+  deliver(fromAgentId: AgentId, payload: Uint8Array): Promise<IncomingMessage>;
+  /** Pull every queued message across all senders, oldest first. */
+  receiveAll(): Promise<IncomingMessage[]>;
+  /** Empty the mailbox across all senders. */
+  drainAll(): Promise<IncomingMessage[]>;
 }
