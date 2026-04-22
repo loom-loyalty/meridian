@@ -151,15 +151,27 @@ jobs:
           # (errors-codes-reachable does ~26 DO RPCs).
           PAGE_SIZE=8
 
-          # Save the initial metadata response to a file so we can
-          # inspect it in the error case without a second curl (which
-          # might behave differently or leak across retries).
+          # Metadata curl with retries. First /conformance invocation
+          # after deploy pulls the conformance scenarios import, which
+          # has a larger module-init cost than the smoke-checked "/"
+          # path. Cold isolates under that load sometimes return
+          # `error code: 1042` (CF "worker returned invalid response"
+          # — a startup timeout / cold-start transient). Retry a few
+          # times before declaring a real fault.
           META_FILE=conf-meta.json
-          curl -sS --max-time 30 -o "$META_FILE" \
-            "$URL/conformance?offset=0&limit=0" || true
-          if ! TOTAL=$(jq -er '.total' "$META_FILE" 2>/dev/null); then
-            echo "::error::Could not determine scenario total from /conformance?limit=0"
-            echo "::group::Metadata response body"
+          TOTAL=""
+          for attempt in 1 2 3 4 5 6; do
+            curl -sS --max-time 30 -o "$META_FILE" \
+              "$URL/conformance?offset=0&limit=0" || true
+            if TOTAL=$(jq -er '.total' "$META_FILE" 2>/dev/null); then
+              break
+            fi
+            echo "Metadata attempt $attempt: non-JSON response; retrying in 5s..."
+            sleep 5
+          done
+          if [ -z "$TOTAL" ]; then
+            echo "::error::Metadata curl failed after 6 attempts"
+            echo "::group::Last metadata response body"
             cat "$META_FILE" | head -40 || echo "(file empty)"
             echo "::endgroup::"
             exit 1
