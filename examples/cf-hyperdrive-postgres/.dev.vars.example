@@ -1,0 +1,4 @@
+# Copy to `.dev.vars` for `wrangler dev` local runs. Not committed.
+# In production, set via `wrangler secret put DATABASE_URL`.
+
+DATABASE_URL=postgresql://user:password@localhost:5432/yourdb

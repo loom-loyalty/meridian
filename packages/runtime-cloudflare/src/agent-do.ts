@@ -551,6 +551,7 @@ export class AgentDurableObject extends DurableObject<AgentEnv> {
     return {
       id: handle.id,
       domain: handle.domain,
+      env: this.env,
       state: {
         save: (k, v) => this.state.save(k, v),
         load: (k) => this.state.load(k),

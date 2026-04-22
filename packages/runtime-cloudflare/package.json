@@ -14,6 +14,10 @@
     "./testing": {
       "types": "./dist/testing/create-test-runtime.d.ts",
       "import": "./dist/testing/create-test-runtime.js"
+    },
+    "./agent": {
+      "types": "./dist/agent-entry.d.ts",
+      "import": "./dist/agent-entry.js"
     }
   },
   "files": [
