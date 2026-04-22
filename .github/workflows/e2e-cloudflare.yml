@@ -119,13 +119,65 @@ jobs:
             if [ "$CODE" = "200" ]; then
               echo "Smoke OK (attempt $i): body=$BODY"
               echo "$BODY" | jq -e '.runtime == "meridian-cloudflare" and .milestone == "m1-walking-skeleton"'
-              exit 0
+              break
             fi
             echo "Attempt $i: HTTP $CODE; retrying in 5s..."
             sleep 5
+            if [ "$i" = "6" ]; then
+              echo "::error::Smoke check failed after 6 attempts"
+              exit 1
+            fi
           done
-          echo "::error::Smoke check failed after 6 attempts"
-          exit 1
+
+      - name: Conformance — run runtime scenarios against live deploy
+        working-directory: packages/runtime-cloudflare
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          # Start `wrangler tail` in the background to capture DO-side
+          # logs + exception stacks while /conformance runs. Without
+          # this, Cloudflare wraps DO errors as "internal error;
+          # reference=XXX" at the RPC boundary and the real stack is
+          # invisible. Tail streams JSON lines per request; we redirect
+          # to a file and print it if any scenario fails.
+          pnpm wrangler tail --name "$WORKER_NAME" --format json > tail.log 2>&1 &
+          TAIL_PID=$!
+          # Give tail a moment to connect before issuing the request.
+          sleep 3
+
+          # Longer max-time: the suite spawns / terminates ~30 agents
+          # serially. Any one scenario that hits a cold DO adds a few
+          # hundred ms.
+          RESPONSE=$(curl -sS -w "\n%{http_code}" --max-time 120 "$URL/conformance" || true)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          CODE=$(echo "$RESPONSE" | tail -n 1)
+          echo "Conformance HTTP $CODE"
+          echo "$BODY" | jq '.summary' || echo "$BODY"
+
+          # Stop tail; give it a moment to flush any pending records.
+          sleep 2
+          kill "$TAIL_PID" 2>/dev/null || true
+          wait "$TAIL_PID" 2>/dev/null || true
+
+          if [ "$CODE" != "200" ]; then
+            echo "::group::Failed scenarios"
+            echo "$BODY" | jq '.results | map(select(.status == "failed"))' || echo "$BODY"
+            echo "::endgroup::"
+            echo "::group::Worker tail output (DO-side exception stacks)"
+            # Extract exception messages/stacks from tail JSON. Each
+            # record has `.exceptions[]` when a DO throw happened.
+            jq -c 'select(.exceptions | length > 0) | {
+              event: .event,
+              exceptions: (.exceptions | map({name, message, stack}))
+            }' tail.log 2>/dev/null || cat tail.log
+            echo "::endgroup::"
+            echo "::error::Conformance endpoint returned $CODE"
+            exit 1
+          fi
+          # Assert summary invariants: no failures, at least one pass.
+          echo "$BODY" | jq -e '.summary.failed == 0'
+          echo "$BODY" | jq -e '.summary.passed > 0'
 
       - name: Teardown — delete CI worker
         # Always runs. DOs created by a deleted worker persist until CF

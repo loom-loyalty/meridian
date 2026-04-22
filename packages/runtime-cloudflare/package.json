@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/create-test-runtime.d.ts",
+      "import": "./dist/testing/create-test-runtime.js"
     }
   },
   "files": [
@@ -25,6 +29,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@loom-loyalty/meridian-conformance": "workspace:*",
     "@loom-loyalty/meridian-types": "workspace:*",
     "croner": "^9.0.0"
   },
