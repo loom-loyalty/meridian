@@ -1,0 +1,60 @@
+# Local dev stack — a Kafka broker + the lag-monitor agent. The agent
+# talks to a Meridian worker at $MERIDIAN_ENDPOINT; point it at your
+# deployed worker (or `wrangler dev --remote` in another terminal).
+#
+# Quick start:
+#   cp .env.example .env
+#   # edit .env: set MERIDIAN_ENDPOINT
+#   docker compose up --build
+#
+# To seed some consumer-group lag so the agent has something to report:
+#
+#   docker exec -it example-docker-kafka-kafka-1 \
+#     kafka-console-producer --broker-list localhost:9092 --topic demo \
+#     < /usr/share/dict/words
+#
+#   docker exec -it example-docker-kafka-kafka-1 \
+#     kafka-console-consumer --bootstrap-server localhost:9092 \
+#       --topic demo --group demo-group --from-beginning --max-messages 5
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    environment:
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "0@kafka:9093"
+      # KRaft mode — no ZooKeeper required.
+      KAFKA_KRAFT_CLUSTER_ID: "meridian-docker-kafka-demo"
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/bitnami/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  agent:
+    build:
+      context: ../..
+      dockerfile: examples/docker-kafka/Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: "kafka:9092"
+      AGENT_ID: ${AGENT_ID:-kafka-lag-monitor}
+      AGENT_DOMAIN: ${AGENT_DOMAIN:-infrastructure}
+      MERIDIAN_ENDPOINT: ${MERIDIAN_ENDPOINT}
+      MERIDIAN_TOKEN: ${MERIDIAN_TOKEN:-}
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-60000}
+      LAG_THRESHOLD: ${LAG_THRESHOLD:-1000}
+    stop_grace_period: 30s
