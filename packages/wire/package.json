@@ -30,5 +30,10 @@
   },
   "devDependencies": {
     "typescript": "^5.7.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/loom-loyalty/meridian.git",
+    "directory": "packages/wire"
   }
 }

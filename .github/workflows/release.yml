@@ -118,6 +118,16 @@ jobs:
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted Publishers requires npm CLI 11.5.1+ for OIDC token
+      # minting to work correctly. Node 22's bundled npm is 10.x,
+      # which silently fails to attach the OIDC credential to the
+      # publish request — the upload returns 404 because npm sees
+      # an anonymous PUT with no matching Trusted Publisher.
+      # Upgrading npm before `pnpm publish` (which delegates the
+      # actual HTTP PUT to npm) fixes this.
+      - name: Upgrade npm for Trusted Publishers (requires 11.5.1+)
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

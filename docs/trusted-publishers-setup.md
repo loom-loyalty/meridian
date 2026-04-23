@@ -13,9 +13,25 @@ to wire each `@loom-loyalty/meridian-*` package to the `release.yml` workflow.
   "publishConfig": {
     "access": "public",
     "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/loom-loyalty/meridian.git",
+    "directory": "packages/<package-dir>"
   }
   ```
-- `.github/workflows/release.yml` has `id-token: write` permission.
+  The `repository.url` must match (case-sensitive) the GitHub repo
+  URL configured in the npm Trusted Publisher entry. `directory`
+  tells npm which subdirectory of the monorepo hosts this specific
+  package — required for provenance to resolve the source tree.
+- `.github/workflows/release.yml` has `id-token: write` permission
+  on the publish job only.
+- The publish job upgrades npm to 11.5.1+ via `npm install -g
+npm@latest` before calling `pnpm publish`. Trusted Publishers
+  needs npm 11.5.1 or later for OIDC credentials to attach
+  correctly; the npm bundled with Node 22 LTS is 10.x and silently
+  fails the attachment, which surfaces as a 404 on the registry
+  PUT.
 - `NPM_TOKEN` is removed from the workflow — OIDC replaces it.
 
 **What you have to do in the npm web UI (once per package, forever):**
@@ -136,7 +152,27 @@ is `"public"` (already set in our package.jsons).
 
 ### `404 Not Found` on publish
 
-The `@loom-loyalty` org doesn't exist or you're not a member. See step 1.
+npm's 404 covers multiple distinct failure modes — it's intentionally
+ambiguous so the error doesn't leak which field is wrong. Cascade
+through these in order:
+
+1. **Missing or wrong `repository` field** in `package.json`.
+   Must match (case-sensitive) the GitHub repo configured in TP.
+   `repository.directory` required for monorepo packages.
+   `repository.url` format: `git+https://github.com/<org>/<repo>.git`.
+2. **npm CLI too old.** Must be 11.5.1+. The publish job installs
+   `npm@latest` before publishing — if you run publish from a
+   laptop with npm 10.x, it'll 404 with no useful error.
+3. **Trusted Publisher not configured for the specific package**.
+   Each package needs its own entry. Check
+   https://www.npmjs.com/package/@loom-loyalty/<pkg>/access.
+4. **Workflow filename mismatch.** npm matches the workflow filename
+   exactly (case-sensitive, including `.yml`). Configure as
+   `release.yml`, not `Release.yml` or `release.yaml`.
+5. **Repo casing mismatch.** `loom-loyalty/meridian` exactly.
+6. **Environment name mismatch.** Leave blank unless the workflow
+   uses a GitHub environment.
+7. **`@loom-loyalty` org doesn't exist or you're not a member.** See step 1.
 
 ### Workflow publishes one package but fails on another
 
