@@ -100,10 +100,28 @@ export async function runRuntimeConformance(
  *   after a deploy throws this error; the next call lands on a fresh
  *   DO running the new code. This is noise from our CI pattern of
  *   deploy-then-immediately-run, not a real bug.
+ *
+ * - "internal error; reference=<hex>" — cold-DO RPC marshaling
+ *   hiccup. On real-CF, the FIRST RPC call to a freshly-spun DO
+ *   sometimes has its thrown RuntimeError masked as a generic
+ *   "internal error" with a CF reference tag. The DO-side
+ *   `logRpcError` wrapper shows the real MRD-CF-* error came through
+ *   correctly — CF just mangles it at the RPC boundary on cold
+ *   starts. Subsequent calls return the true error, so retry
+ *   reliably unsticks. Observed failing scenarios: all in the first
+ *   10-15 of the suite (lifecycle, state) when run immediately after
+ *   `wrangler deploy`. Warmth-based masking, not a bug we can fix
+ *   in the runtime.
  */
 function isTransientDOError(err: unknown): boolean {
   const msg = (err as Error | undefined)?.message ?? "";
   if (msg.includes("Durable Object reset because its code was updated")) {
+    return true;
+  }
+  // Match CF's generic-error marshaling pattern. The `reference=<hex>`
+  // token is distinctive — real adopter errors use our `MRD-CF-*`
+  // prefix and wouldn't overlap.
+  if (/internal error;\s*reference\s*=\s*[a-z0-9]+/i.test(msg)) {
     return true;
   }
   return false;
