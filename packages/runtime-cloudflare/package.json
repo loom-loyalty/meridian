@@ -25,6 +25,10 @@
     "wrangler.toml.example",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

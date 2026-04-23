@@ -8,17 +8,37 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Default permissions are read-only. Each job declares the minimum
+# it needs — keeps blast radius tight if either job is compromised.
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 jobs:
-  release:
-    name: Changesets
+  # Job 1: manage the "Version Packages" PR.
+  #
+  # Consumes pending .changeset/*.md files, bumps package versions,
+  # regenerates CHANGELOGs, opens or updates the release PR. When
+  # the PR merges, the downstream push runs the `publish` job.
+  #
+  # No npm access here — this job is ONLY about PR management.
+  version:
+    name: Version Packages
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.repository == 'loom-loyalty/meridian'
+    # Elevated because we write to the repo (version bumps + tags)
+    # and open/update PRs. No id-token — this job never publishes.
+    permissions:
+      contents: write
+      pull-requests: write
+    # Output whether there are versions ready to publish this run.
+    # `changesets/action` sets `hasChangesets=true` when pending
+    # changesets exist (i.e., it just opened a PR). When false, the
+    # Version Packages PR has already merged and versions in
+    # package.json are ready to be released — that's the signal for
+    # the `publish` job below.
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,21 +60,71 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Create Release Pull Request / Publish
+      - name: Create Release Pull Request
         id: changesets
         uses: changesets/action@v1
         with:
-          # When there are pending changesets, opens/updates the
-          # "Version Packages" PR that applies bumps and regenerates
-          # each package's CHANGELOG.md. When none remain and packages
-          # have been versioned, the publish command runs.
           version: pnpm changeset version
-          # `changeset publish` runs `npm publish` on each package with
-          # a version not yet on the registry, then creates git tags
-          # and GitHub Releases. Requires NPM_TOKEN (see env below).
-          publish: pnpm changeset publish
           commit: "chore(release): version packages"
           title: "chore(release): version packages"
+          # Deliberately no `publish:` here. Publishing is the next
+          # job's concern and runs with narrower permissions.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Job 2: publish to npm via OIDC (Trusted Publishers).
+  #
+  # Runs only when the `version` job's push came from a merged
+  # Version Packages PR (i.e., no pending changesets AND versions
+  # are ahead of the registry). `pnpm changeset publish` iterates
+  # every workspace package; for each one whose version isn't on
+  # npm yet, it runs `pnpm publish`.
+  #
+  # Provenance + OIDC flow:
+  #   - id-token: write  → Actions runner can mint the OIDC token
+  #   - contents: read   → minimum to check out the repo
+  #   - NPM_CONFIG_PROVENANCE=true → force attestation even if a
+  #     package's publishConfig accidentally drifts
+  #
+  # First-time publish for a package fails until its Trusted
+  # Publisher is registered on npm. See
+  # docs/trusted-publishers-setup.md for the one-time UI steps.
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: version
+    # Only run when `version` didn't open/update a Version Packages
+    # PR (i.e., nothing to version → something may be ready to
+    # publish). Skipping is cheap; a no-op `changeset publish`
+    # prints "No unpublished packages to publish" and exits 0.
+    if: needs.version.outputs.hasChangesets == 'false' && github.repository == 'loom-loyalty/meridian'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Publish
+        run: pnpm changeset publish
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
