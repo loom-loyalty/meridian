@@ -1,6 +1,6 @@
 {
   "name": "@loom-loyalty/meridian-cli",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Developer CLI for the Meridian protocol. Scaffolds Cloudflare adopter projects, mints admin tokens, runs diagnostics, and talks to the admin surface exposed by @loom-loyalty/meridian-runtime-cloudflare.",
   "license": "Apache-2.0",
   "type": "module",
