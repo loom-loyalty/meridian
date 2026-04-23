@@ -1,5 +1,11 @@
 # @meridian/example-cf-hyperdrive-postgres
 
+## 0.0.4
+
+### Patch Changes
+
+- @loom-loyalty/meridian-runtime-cloudflare@0.6.2
+
 ## 0.0.3
 
 ### Patch Changes

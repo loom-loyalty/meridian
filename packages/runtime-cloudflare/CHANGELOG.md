@@ -1,5 +1,12 @@
 # @loom-loyalty/meridian-runtime-cloudflare
 
+## 0.6.2
+
+### Patch Changes
+
+- Updated dependencies [bf85abc]
+  - @loom-loyalty/meridian-conformance@0.3.2
+
 ## 0.6.0
 
 ### Minor Changes
