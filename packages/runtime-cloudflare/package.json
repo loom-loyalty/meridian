@@ -1,6 +1,6 @@
 {
   "name": "@loom-loyalty/meridian-runtime-cloudflare",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Cloudflare Workers + Durable Objects reference adapter for the Meridian protocol. Implements the six stable runtime primitives. See specs/core/RUNTIME-SPEC.md.",
   "license": "Apache-2.0",
   "type": "module",
