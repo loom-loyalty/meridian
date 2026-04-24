@@ -1,7 +1,7 @@
 {
   "name": "@meridian/example-hello-agent",
   "private": true,
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Minimal Meridian agent example",
   "type": "module",
   "scripts": {
