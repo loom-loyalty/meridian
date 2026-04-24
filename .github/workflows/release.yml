@@ -125,8 +125,14 @@ jobs:
       # an anonymous PUT with no matching Trusted Publisher.
       # Upgrading npm before `pnpm publish` (which delegates the
       # actual HTTP PUT to npm) fixes this.
+      #
+      # `--force` bypasses an integrity check that catches an
+      # in-place self-upgrade race on Node 22. Without it, npm 10.x
+      # fails with `Cannot find module 'promise-retry'` because the
+      # intermediate state (old files being swapped for new files)
+      # is inspected mid-swap. --force lets the swap complete.
       - name: Upgrade npm for Trusted Publishers (requires 11.5.1+)
-        run: npm install -g npm@latest
+        run: npm install -g npm@latest --force
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
