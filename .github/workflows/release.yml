@@ -111,28 +111,24 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup Node
+      # Trusted Publishers requires npm 11.5.1+ for OIDC token
+      # attachment. Node 22 LTS ships npm 10.x; the self-upgrade
+      # path (`npm install -g npm@latest [--force]`) hits a
+      # `Cannot find module 'promise-retry'` race on the GH runner
+      # that we can't work around.
+      #
+      # Workaround: use Node 24 for the publish job only. Node 24
+      # ships npm 11.x natively, so `pnpm publish` (which shells
+      # out to npm for the actual PUT) gets the version it needs
+      # without any upgrade step. The version job still uses the
+      # repo's pinned Node 22 from .nvmrc — this Node 24 pin is
+      # scoped to publish.
+      - name: Setup Node (24 for npm 11.x bundled)
         uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: "24"
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
-
-      # Trusted Publishers requires npm CLI 11.5.1+ for OIDC token
-      # minting to work correctly. Node 22's bundled npm is 10.x,
-      # which silently fails to attach the OIDC credential to the
-      # publish request — the upload returns 404 because npm sees
-      # an anonymous PUT with no matching Trusted Publisher.
-      # Upgrading npm before `pnpm publish` (which delegates the
-      # actual HTTP PUT to npm) fixes this.
-      #
-      # `--force` bypasses an integrity check that catches an
-      # in-place self-upgrade race on Node 22. Without it, npm 10.x
-      # fails with `Cannot find module 'promise-retry'` because the
-      # intermediate state (old files being swapped for new files)
-      # is inspected mid-swap. --force lets the swap complete.
-      - name: Upgrade npm for Trusted Publishers (requires 11.5.1+)
-        run: npm install -g npm@latest --force
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
