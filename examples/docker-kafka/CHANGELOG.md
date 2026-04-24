@@ -1,5 +1,12 @@
 # @meridian/example-docker-kafka
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [a3d91a5]
+  - @loom-loyalty/meridian-types@0.4.3
+
 ## 0.0.3
 
 ### Patch Changes
