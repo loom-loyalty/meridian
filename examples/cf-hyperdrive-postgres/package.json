@@ -1,7 +1,7 @@
 {
   "name": "@meridian/example-cf-hyperdrive-postgres",
   "private": true,
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Native-Cloudflare Meridian agent: Postgres query-performance monitor via Hyperdrive",
   "type": "module",
   "scripts": {
