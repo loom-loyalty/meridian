@@ -123,9 +123,48 @@ createMeridianWorker({
   agents: [monitor],
   routes: {
     "GET /healthz": (req, env) => new Response("ok"),
+    // The 4th argument resolves the tenant lazily (public routes that
+    // never call it need no credentials).
+    "GET /whoami": async (req, env, ctx, meridian) =>
+      Response.json(await meridian.tenant()),
   },
 });
 ```
+
+### `onRequest` — quotas, metering, audit
+
+`config.onRequest` runs before every built-in `/agents/*` and
+`/admin/*` route, after bearer auth and tenant resolution. It receives
+the resolved tenant and a classified route, so per-tenant policy
+doesn't have to re-parse paths:
+
+```ts
+createMeridianWorker({
+  agents,
+  tenancy: { authorizer },
+  async onRequest({ tenant, route, ctx }) {
+    if (route.kind !== "agent" || route.action !== "spawn") return;
+    if (!(await quotas.take(tenant.tenantId, "spawn"))) {
+      return Response.json({ error: "spawn quota" }, { status: 429 }); // short-circuit
+    }
+    return {
+      // Called with the route's response; errors are already mapped
+      // to their HTTP status. Return a Response to replace it.
+      onResponse(res) {
+        if (res.status >= 400)
+          ctx.waitUntil(quotas.refund(tenant.tenantId, "spawn"));
+      },
+    };
+  },
+});
+```
+
+`route` is `{ kind: "agent", agentId, action }` (`get`, `terminate`,
+`spawn`, `send`, `broadcast`, `inbox`, `inbox-drain`, `unknown`) or
+`{ kind: "admin", action: "domains" | "inspect" | "unknown" }`
+(`inspect` carries `agentId`). Throwing a `MeridianError` maps to its
+HTTP status. The hook doesn't run for custom routes, `GET /`, or the
+AgentCard.
 
 ## Adopter unit tests — `createTestRuntime()`
 
@@ -209,7 +248,7 @@ intentionally NOT in the reference runtime:
 - Tenant provisioning flow (who creates a tenant, how billing
   activates)
 - Cross-region routing
-- Spawn-bomb rate limiting per tenant
+- Spawn-bomb rate limiting per tenant (implement it in `onRequest`)
 - Tenant-level backup/export
 - Aggregate `TenantLimits.maxCostUsd` caps across agents
   (per-agent `ResourceLimits` already enforced; tenant aggregation
