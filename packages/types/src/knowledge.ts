@@ -101,6 +101,28 @@ export interface Attribution {
   id: string;
   /** For agents: the human or domain the agent acted on behalf of, if any. */
   onBehalfOf?: string;
+  /** For agents backed by a model: which model did the work, and why that one. */
+  model?: ModelAttribution;
+}
+
+/**
+ * The model behind an agent's action and how it was chosen. See
+ * KNOWLEDGE-SPEC.md §8.2 ("Provenance").
+ *
+ * @experimental
+ */
+export interface ModelAttribution {
+  /** Implementation-defined model id (for example a provider's model name). */
+  model: string;
+  /**
+   * `default`: the agent's configured model. `pinned`: an operator override.
+   * `routed`: chosen per call by `router` among the agent's candidates.
+   */
+  choice?: "default" | "pinned" | "routed";
+  /** For `routed`: the model or agent that chose. */
+  router?: string;
+  /** For `routed`: the router's probability for its pick, in [0, 1]. */
+  probability?: number;
 }
 
 /**
@@ -588,8 +610,53 @@ export interface ProposalEvidence {
 export interface ProposalReview {
   tier: EnforcementTier;
   signal: QualitySignal;
+  /** Who decided: for a `decided` review, the decision agent, not the reviewer it stood in for. */
   reviewer: Attribution;
   decidedAt: Timestamp;
+  /** How the review was reached. Absent means `written`. */
+  basis?: ReviewBasis;
+}
+
+/**
+ * How an agent-review outcome was reached (KNOWLEDGE-SPEC.md §8.2,
+ * "Provenance").
+ *
+ * - `written`: the reviewer examined the change and wrote the signal.
+ * - `decided`: a decision model predicted the reviewer's verdict with a
+ *   calibrated probability, and no written review was produced. A decided
+ *   review MUST NOT be the only agent review before a proposal is applied
+ *   without a human gate.
+ *
+ * @experimental
+ */
+export interface ReviewBasis {
+  kind: "written" | "decided";
+  /** For `decided`: the reviewer (`AgentId`) whose review this stands in for. */
+  standsInFor?: string;
+  /** For `decided`: the probability of the recorded result, in [0, 1]. */
+  probability?: number;
+}
+
+/**
+ * An assessment of how much harm a proposal could do if it were wrong and
+ * applied unchecked, on ordered levels (KNOWLEDGE-SPEC.md §8.2, "Risk").
+ *
+ * @experimental
+ */
+export interface ProposalRisk {
+  /** Level descriptions, lowest first. */
+  levels: string[];
+  /** Probability per level, same order; sums to 1. */
+  probabilities: number[];
+  /** Probability-weighted level index (0 = the lowest level). */
+  score: number;
+  /**
+   * True when the assessment added a human gate the proposal's domains
+   * would not otherwise require.
+   */
+  escalated: boolean;
+  assessedBy: Attribution;
+  assessedAt: Timestamp;
 }
 
 /**
@@ -709,6 +776,8 @@ export interface SpecChangeProposal {
   /** Tier currently pending while `status` is `in_review`. */
   pendingTier?: EnforcementTier;
   reviews: ProposalReview[];
+  /** Risk assessment, when the implementation makes one (§8.2). */
+  risk?: ProposalRisk;
   conflicts?: ProposalConflict[];
   /** When rebased, the proposal this one replaces. */
   supersedes?: ChangeProposalId;
