@@ -6,8 +6,22 @@
 import type { DomainId, WorkItemId, AgentId, Timestamp } from "./primitives.js";
 import type { CompetingContext, QualitySignal } from "./quality.js";
 import type { ErrorFeedback } from "./feedback.js";
+import type { NodeTypeId, SpecImpact } from "./knowledge.js";
 
-export type WorkItemType = "initiative" | "epic" | "story" | "task";
+/**
+ * Built-in work item types. The default delivery ladder is
+ * program > project > epic > story > task. `initiative` is retained from
+ * the original four-type vocabulary and remains valid. Tenants may define
+ * further delivery types in their taxonomy (see `WorkItem.typeId` and
+ * KNOWLEDGE-SPEC.md §6); each maps to the nearest of these values.
+ */
+export type WorkItemType =
+  | "program"
+  | "project"
+  | "initiative"
+  | "epic"
+  | "story"
+  | "task";
 export type WorkItemSource = "human" | "agent" | "feedback";
 export type WorkItemStatus =
   | "proposed"
@@ -36,6 +50,32 @@ export interface WorkItem {
 
   /** What feedback, insight, or initiative spawned this. */
   lineage?: WorkItemId;
+
+  /**
+   * Containment parent on the delivery ladder (e.g. the epic a story
+   * belongs to). Distinct from `lineage`, which records what spawned the
+   * item. See WORK-ITEM-SPEC.md §2.1.
+   *
+   * @experimental
+   */
+  parentId?: WorkItemId;
+
+  /**
+   * Tenant taxonomy node type for this item, when the tenant's ladder uses
+   * types beyond the built-in `WorkItemType` values. `type` then carries
+   * the nearest built-in value. See KNOWLEDGE-SPEC.md §6.
+   *
+   * @experimental
+   */
+  typeId?: NodeTypeId;
+
+  /**
+   * Specs and sections this item is expected to change. See
+   * KNOWLEDGE-SPEC.md §7.
+   *
+   * @experimental
+   */
+  specImpact?: SpecImpact;
 
   /** Real dollar cost estimates. */
   costToBuild: CostEstimate;

@@ -272,14 +272,57 @@ The result is written back to the system as a work-item lineage. The Amplitude a
 
 ---
 
-## Chapter 3: When to reach for patterns
+## Chapter 3: Work that keeps the specs current
+
+The viewport fix from Chapter 2 is a story under an epic that `implements` the business's `customer-onboarding` capability. That capability has a living spec, and one of its sections lists the devices onboarding supports. When the fix ships, that section is wrong unless someone updates it. In a Meridian knowledge base, the agent that did the work proposes the update.
+
+The agent did not need to be told which spec to touch. It walked the graph from the story up to its epic, followed `implements` to the capability, and found the capability's spec, scoring the path by each relation type's `impactWeight`. The result is an inferred `SpecImpactEntry` with a confidence and the path that produced it, so a reviewer can see why the agent thinks this spec is affected.
+
+On completion, the agent submits a section-level proposal against the revision it read:
+
+```typescript
+import type { SpecChangeProposal } from "@loom-loyalty/meridian-types";
+
+const proposal: SpecChangeProposal = {
+  id: "scp-0193",
+  specId: "spec-customer-onboarding",
+  baseRevisionId: "rev-customer-onboarding-14",
+  operations: [
+    {
+      op: "replace_section",
+      sectionId: "sec-supported-devices",
+      body: "Onboarding supports viewports from 320px wide, including Safari on iOS. Step 3 renders in a single column below 390px.",
+      baseContentHash: "sha256:9f2c41",
+    },
+  ],
+  rationale:
+    "The viewport fix changed the supported minimum width from 390px to 320px; the section still stated 390px.",
+  evidence: [{ kind: "test_result", ref: "ci://onboarding-e2e/run/8812" }],
+  workItemId: "story-viewport-fix",
+  trigger: "work_item_completed",
+  author: { kind: "agent", id: "ux-onboarding-agent" },
+  status: "in_review",
+  pendingTier: "mechanical",
+  reviews: [],
+  createdAt: 1777420800000,
+  updatedAt: 1777420800000,
+};
+```
+
+The proposal passes the same graduated enforcement as code: mechanical checks (the section exists, the base revision is current, links resolve), an agent review for consistency with related specs, and a human gate by a steward of the domain that owns the spec. The agent cannot approve its own proposal at the human gate. If another proposal touched the same section first, this one is marked `conflicted` and the agent rebases it; the system never merges the two silently. Once accepted, the spec gets a new immutable revision whose cause points back to the story.
+
+Which kinds of nodes exist (capability, epic, solution) and which relations connect them are tenant data, not protocol enums. The taxonomy is versioned and changes through the same gated proposals. See [`patterns/KNOWLEDGE-SPEC.md`](patterns/KNOWLEDGE-SPEC.md).
+
+---
+
+## Chapter 4: When to reach for patterns
 
 ### Core vs patterns — what adopters actually implement
 
 Meridian splits into two layers with different conformance commitments:
 
 - **Core** ([`core/`](core/)) — data shapes on the wire and in primitives. Transport, runtime primitives, feedback envelope, skill declaration. Any implementation claiming Meridian conformance implements the stable primitives defined here.
-- **Operating patterns** ([`patterns/`](patterns/)) — opinionated ways to organize work and process feedback. Domain stewardship, two-cost work items, graduated enforcement, optional-tier feedback signals. Not required for core conformance. Strongly recommended for the distinctive Meridian value.
+- **Operating patterns** ([`patterns/`](patterns/)) — opinionated ways to organize work and process feedback. Domain stewardship, two-cost work items, graduated enforcement, optional-tier feedback signals, the knowledge model. Not required for core conformance. Strongly recommended for the distinctive Meridian value.
 
 ### When core alone is enough
 
@@ -295,6 +338,7 @@ The patterns start to earn their complexity when:
 - Real dollar budgets matter more than story points (work item schema with two cost estimates).
 - Multiple agents legitimately disagree and the system needs to surface evidence rather than pick a winner (competing context).
 - Compound learning over time is a goal, not an afterthought (quality signals plus the meta-loop).
+- Business knowledge (capabilities, processes, architecture) needs to stay current as work lands, without a separate documentation chore (knowledge model).
 
 For Loom Loyalty specifically, the patterns aren't optional. Loom is designed to run with a small human team stewarding domain agents, with real-time cost attribution as a first-class property. The patterns are the mechanism that delivers that.
 
@@ -313,6 +357,7 @@ It is a protocol. It specifies shapes. Adopters pick orchestrators and framework
 ### Forward-pointers
 
 - **Priority engine** — `patterns/PRIORITY-ENGINE-SPEC.md` lands in v1.0-draft.5. Data shapes and escalation are normative; the WSJF-derived formula ships as a reference implementation in `@loom-loyalty/meridian-priority-reference`.
+- **Knowledge model** — [`patterns/KNOWLEDGE-SPEC.md`](patterns/KNOWLEDGE-SPEC.md) (draft, experimental): tenant-defined taxonomy, knowledge graph, living specs, and the proposal flow that turns completed work into spec revisions.
 - **Conformance test suite** — planned for `@loom-loyalty/meridian-conformance`. Gate on v1.0 finalization.
 - **Runtime adapters** — the reference Cloudflare adapter (`@loom-loyalty/meridian-runtime-cloudflare`) ships alongside v1.0. Other adapters welcome via the community process.
 

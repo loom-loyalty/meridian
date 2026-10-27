@@ -1,32 +1,49 @@
 # Meridian Work Item Schema Specification
 
-**Version:** 1.0.0-draft.1
+**Version:** 1.0.0-draft.2
 **Status:** Draft
-**Date:** April 2026
+**Date:** October 2026
 **License:** CC BY 4.0
 
 > Meridian is the protocol for systems where agents operate, humans steward, and costs are visible in real time. It defines the wire format, runtime primitives, feedback contract, and skill declaration that let mixed agent-and-human organizations run lean — small teams of stewards setting direction and gating decisions, while domain agents handle operational work within visible budgets.
 
-This document defines the Meridian work item schema: the four work item types (initiative, epic, story, task), the two cost estimates (cost-to-build + cost-of-not-building) denominated in USD, the required field set, and the lifecycle. Work items are an operating pattern; see the [`README.md`](README.md) in this directory for the core/patterns boundary.
+This document defines the Meridian work item schema: the work item type ladder (program, project, epic, story, task, plus initiative), the two cost estimates (cost-to-build + cost-of-not-building) denominated in USD, the required field set, and the lifecycle. Work items are an operating pattern; see the [`README.md`](README.md) in this directory for the core/patterns boundary.
 
 ---
 
 ## 1. Purpose
 
-This specification defines the work item schema for Meridian systems. Work items are the units of work that flow through the system: initiatives, epics, stories, and tasks. Every work item carries two cost estimates in real dollars, enabling automated prioritization.
+This specification defines the work item schema for Meridian systems. Work items are the units of work that flow through the system: programs, projects, epics, stories, and tasks (and initiatives, from the original vocabulary). Every work item carries two cost estimates in real dollars, enabling automated prioritization.
 
 ---
 
 ## 2. Work item types
 
-Meridian defines four work item types in a hierarchy:
+Meridian defines six built-in work item types (`WorkItemType`). The default delivery ladder, from top to bottom, is:
 
-- **Initiative** — a high-level goal, single-domain or cross-domain. "Reduce infrastructure costs by 20%." "Improve onboarding conversion by 15%."
-- **Epic** — a domain-scoped body of work derived from an initiative. An initiative may produce epics in multiple domains.
+- **Program** — a long-running, outcome-level body of work, single-domain or cross-domain. "Modernize partner onboarding." A program groups projects.
+- **Project** — a bounded effort within a program, with a defined outcome and end. "Self-serve partner sign-up." A project groups epics.
+- **Epic** — a domain-scoped body of work within a project (or initiative). A project or initiative may produce epics in multiple domains.
 - **Story** — a unit of deliverable work within an epic. Stories are what agents and humans pull from the board.
 - **Task** — a sub-unit of a story. Typically a single action: write a migration, run a test, review a change.
 
-Implementations may define additional types. The four above are the required vocabulary.
+One further type is retained from the original four-type vocabulary:
+
+- **Initiative** — a high-level goal, single-domain or cross-domain. "Reduce infrastructure costs by 20%." "Improve onboarding conversion by 15%." An initiative may sit at the top level or under a program, and may parent projects or epics. Existing initiative → epic → story → task trees remain valid; no migration is required.
+
+Implementations may define additional types (§2.2). The six above are the built-in vocabulary.
+
+### 2.1 Parent and lineage
+
+A work item's place on the ladder is its containment parent, `parentId` (for example, the epic a story belongs to). This is distinct from `lineage`, which records what spawned the item (a feedback signal, an insight, or another work item) and may point outside the ladder. Both are optional.
+
+### 2.2 Taxonomy-defined ladders
+
+The ladder is data, not a fixed hierarchy. Adopters of [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) define their delivery types and ladder in their taxonomy and may rename, add, or remove rungs. Work items are then knowledge nodes of delivery types: the work item `id` is also its node id, and the graph relates work to the capabilities, processes, and specs it affects.
+
+Each tenant-defined delivery type maps to the nearest built-in `WorkItemType`. A work item of such a type carries the built-in value in `type` and the tenant type in `typeId`, so gates (`GateConfig.workItemType`) and priority engines written against the built-in values keep working.
+
+Adopters that switch exhaustively over `WorkItemType` should handle `program` and `project`, which were added in this draft.
 
 ---
 
@@ -50,6 +67,12 @@ Both are real dollar values, not story points, t-shirt sizes, or Fibonacci numbe
 **Lineage.** What feedback signal, insight, or parent work item spawned this one. Lineage enables tracing from a deployed index back to the hot query that triggered the story.
 
 **Status.** Current state in the pipeline: `proposed`, `researching`, `ready`, `in_progress`, `in_review`, `approved`, `deploying`, `validating`, `done`, `cancelled`.
+
+The following fields are optional and `@experimental`:
+
+- `parentId` — containment parent on the ladder (§2.1).
+- `typeId` — tenant taxonomy type, when it differs from the built-in `type` (§2.2).
+- `specImpact` — the specs and sections this item is expected to change. See [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) §7.
 
 ---
 
@@ -126,9 +149,11 @@ proposed → researching → ready → in_progress → in_review → approved �
                                                                                cancelled ←──┘
 ```
 
-Not every work item passes through every status. A simple task may go directly from `ready` to `in_progress` to `done`. An initiative may spend weeks in `researching`.
+Not every work item passes through every status. A simple task may go directly from `ready` to `in_progress` to `done`. A program or initiative may spend weeks in `researching`.
 
 The `in_review` status triggers graduated enforcement: mechanical checks first, then agent review, then human gates (as defined in the Feedback Processing Spec).
+
+For adopters of [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md), progress and completion also produce spec change proposals against the specs the item affected. Those proposals are gated separately, by the domain that owns each spec, and an accepted proposal records the work item as the cause of the new spec revision.
 
 ---
 
