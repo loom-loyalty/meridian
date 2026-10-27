@@ -1,5 +1,13 @@
 # @loom-loyalty/meridian-types
 
+## 0.4.4
+
+### Patch Changes
+
+- 8517863: Publish `src/` alongside `dist/`. The emitted `.js.map` and `.d.ts.map`
+  files point at `../src/*.ts`, which wasn't in the tarball, so stack traces
+  and "go to definition" in adopters' editors resolved to missing files.
+
 ## 0.4.3
 
 ### Patch Changes

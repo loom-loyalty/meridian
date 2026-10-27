@@ -1,5 +1,40 @@
 # @loom-loyalty/meridian-runtime-cloudflare
 
+## 0.7.0
+
+### Minor Changes
+
+- 995a593: Add `onRequest` and tenant context for custom routes.
+  - `config.onRequest({ req, env, ctx, tenant, route })` runs before built-in
+    `/agents/*` and `/admin/*` routes, after bearer auth and tenant
+    resolution. It can short-circuit by returning a `Response`, or return
+    `{ onResponse(res) }` to observe or replace the response (errors are
+    already mapped to HTTP status). `route` classifies the request
+    (`{ kind: "agent", agentId, action }` or an admin route), so adopters
+    can meter, rate-limit and audit per tenant and operation without
+    re-parsing paths.
+  - Custom `routes` handlers get a 4th argument, `meridian.tenant()`. It
+    resolves the tenant lazily (once per request), so public custom routes
+    still need no credentials.
+
+### Patch Changes
+
+- 8517863: Publish `src/` alongside `dist/`. The emitted `.js.map` and `.d.ts.map`
+  files point at `../src/*.ts`, which wasn't in the tarball, so stack traces
+  and "go to definition" in adopters' editors resolved to missing files.
+- e3dfbf7: Security: reject tenant ids containing `:` (new code `MRD-CF-TN-001`).
+
+  DO names are `${tenantId}::${agentId}` and agent ids are arbitrary, so a
+  colon in a tenant id made names ambiguous: tenant `a::b` + agent `c` and
+  tenant `a` + agent `b::c` resolved to the same Durable Object. The check
+  runs when the `TenantAuthorizer` resolves a request and again inside
+  `spawn()`. `assertValidTenantId` is exported for authorizers that want
+  to validate early.
+
+- Updated dependencies [8517863]
+  - @loom-loyalty/meridian-conformance@0.3.5
+  - @loom-loyalty/meridian-types@0.4.4
+
 ## 0.6.4
 
 ### Patch Changes
