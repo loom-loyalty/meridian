@@ -201,6 +201,19 @@ Proposals pass the graduated enforcement tiers from [`FEEDBACK-PROCESSING-SPEC.m
 
 **Human gate.** A steward of the spec's owning domain approves or rejects.
 
+**Provenance.** A `ProposalReview` MAY carry a `basis` saying how it was reached.
+
+- `written` (the default when `basis` is absent): the reviewer examined the change and wrote the signal.
+- `decided`: a decision model predicted the reviewer's verdict with a calibrated `probability`, and no written review exists. Its `reviewer` is the decision agent, and `standsInFor` names the reviewer it replaces.
+- Decision models can be steered by the text they read. A `decided` review therefore MUST NOT be the only agent review of a proposal that will be applied without a human gate: the reviewer it stands in for MUST write its review instead.
+- An agent's `Attribution` MAY name the model behind it (`model`), and whether that model was the agent's default, an operator's pin, or `routed` per call by another model.
+
+**Risk.** An implementation MAY assess how much harm a proposal could do if it were wrong and applied unchecked, as a `ProposalRisk` with a probability per ordered level.
+
+- An assessment MAY add the human gate for every touched domain to a proposal that its domains would otherwise apply without one. It is then `escalated`.
+- Implementations SHOULD escalate on the probability of the higher levels, not on the probability-weighted score alone, so a small chance of a severe change is not averaged away.
+- A risk assessment MUST NOT remove a gate, and MUST NOT reject a proposal on its own.
+
 Which of agent review and human gate apply is configured by the owning domain's stewards with a `ProposalGateConfig` in `Domain.proposalGates`, keyed by `proposalKind` (`"spec_change"` or `"taxonomy_change"`). A config MAY narrow itself to specs attached to particular node types (`nodeTypeIds`) and MAY name the reviewer agents for the agent review tier (`reviewers`) and the stewards who may approve at the human gate (`approvers`). When several configs match, the one with `nodeTypeIds` wins over the one without. When none matches, all three tiers apply. The mechanical tier always runs whatever the config says, and taxonomy proposals always include the human gate (§3.5).
 
 **Proposals that span domains.** A proposal whose operations touch sections with different effective owning domains (§5.1) is gated by each of those domains: the tiers that apply are the union of the tiers each domain's config requires, and the human gate needs an approving review from a steward of every domain whose sections the proposal touches that requires it.
