@@ -1,5 +1,13 @@
 # @loom-loyalty/meridian-runtime-cloudflare
 
+## 0.7.2
+
+### Patch Changes
+
+- Updated dependencies [c03135d]
+  - @loom-loyalty/meridian-types@0.6.0
+  - @loom-loyalty/meridian-conformance@0.3.7
+
 ## 0.7.1
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @loom-loyalty/meridian-wire
 
+## 0.2.8
+
+### Patch Changes
+
+- Updated dependencies [c03135d]
+  - @loom-loyalty/meridian-types@0.6.0
+
 ## 0.2.7
 
 ### Patch Changes
