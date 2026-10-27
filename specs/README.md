@@ -9,7 +9,7 @@ Start with [`MERIDIAN-IN-PRACTICE.md`](MERIDIAN-IN-PRACTICE.md) — a narrative 
 Then:
 
 - [`core/`](core/) — the protocol. Transport, runtime primitives, feedback envelope, skill declaration. Any implementation claiming Meridian conformance implements the stable primitives defined here.
-- [`patterns/`](patterns/) — the opinionated operating patterns Loom Loyalty uses. Domain stewardship, two-cost work items, graduated enforcement, feedback processing. Strongly recommended for the distinctive Meridian value, but not required for core conformance.
+- [`patterns/`](patterns/) — the opinionated operating patterns Loom Loyalty uses. Domain stewardship, two-cost work items, graduated enforcement, feedback processing, and the knowledge model ([`patterns/KNOWLEDGE-SPEC.md`](patterns/KNOWLEDGE-SPEC.md)): a tenant-defined taxonomy and living business specs that completed work updates through gated proposals. Strongly recommended for the distinctive Meridian value, but not required for core conformance.
 
 ## Status
 

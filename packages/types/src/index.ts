@@ -14,4 +14,5 @@ export * from "./wire.js";
 export * from "./feedback.js";
 export * from "./domain.js";
 export * from "./work-item.js";
+export * from "./knowledge.js";
 export * from "./runtime.js";
