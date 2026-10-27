@@ -226,6 +226,13 @@ export interface NodeTypeMigration {
   /** Values for fields that are newly required. */
   defaults?: Record<string, unknown>;
   /**
+   * Per field (by its new name), old value → new value, applied after
+   * `fieldMap`. Keys are the old values as strings. Use it when an enum
+   * narrows or a value is renamed; a node whose value has no mapping and
+   * no longer validates fails the migration's dry run.
+   */
+  valueMap?: Record<string, Record<string, unknown>>;
+  /**
    * `eager`: all nodes are rewritten when the version is published.
    * `lazy`: nodes are migrated on next write; reads see them at their
    * recorded `taxonomyVersion` until then.
@@ -517,6 +524,27 @@ export interface RemoveSectionOperation {
 }
 
 /**
+ * Move a section, keeping its id, content, and links. A move changes only
+ * the section's position, so rebase checks treat it like a change to the
+ * section and to its new anchor.
+ *
+ * @experimental
+ */
+export interface MoveSectionOperation {
+  op: "move_section";
+  sectionId: SpecSectionId;
+  /**
+   * Place it after this sibling. `null`: first under its parent.
+   * Omitted: last under its parent.
+   */
+  afterSectionId?: SpecSectionId | null;
+  /** New parent. `null`: make it top-level. Omitted: keep the current parent. */
+  parentSectionId?: SpecSectionId | null;
+  /** `contentHash` of the section at the base revision. */
+  baseContentHash?: string;
+}
+
+/**
  * Add or remove typed links on a section.
  *
  * @experimental
@@ -537,6 +565,7 @@ export type SpecChangeOperation =
   | AddSectionOperation
   | ReplaceSectionOperation
   | RemoveSectionOperation
+  | MoveSectionOperation
   | RelinkOperation;
 
 /**
@@ -629,6 +658,14 @@ export interface ProposalConflict {
   conflictingProposalId?: ChangeProposalId;
   conflictingRevisionId?: SpecRevisionId;
   detail: string;
+  /**
+   * For a section conflict, the three sides, so tools can show them side
+   * by side: the section's body at the base revision, at the head, and as
+   * proposed. Absent when that side has no section (added or removed).
+   */
+  baseText?: string;
+  headText?: string;
+  proposedText?: string;
   detectedAt: Timestamp;
 }
 

@@ -70,7 +70,7 @@ Two optional fields drive impact inference (§7.2): `impactPropagation` (`forwar
 
 Every accepted `TaxonomyChangeProposal` publishes exactly one new version. Versions are immutable once published.
 
-Each `KnowledgeNode` records the `taxonomyVersion` its `fields` were last validated against. When a version changes a node type in a way that invalidates existing nodes (a new required field, a renamed field, a split or merged type), the proposal MUST carry a `NodeTypeMigration` for the affected type. A migration names `fromTypeId` and `toTypeId` (equal for an in-place schema change), an optional `fieldMap` (old name to new name, `null` to drop), `defaults` for newly required fields, and a `mode`:
+Each `KnowledgeNode` records the `taxonomyVersion` its `fields` were last validated against. When a version changes a node type in a way that invalidates existing nodes (a new required field, a renamed field, a split or merged type), the proposal MUST carry a `NodeTypeMigration` for the affected type. A migration names `fromTypeId` and `toTypeId` (equal for an in-place schema change), an optional `fieldMap` (old name to new name, `null` to drop), `defaults` for newly required fields, an optional `valueMap` (per field, old value to new value, for a narrowed or renamed enum), and a `mode`:
 
 - **`eager`** — every affected node is rewritten when the version is published. Suitable for small node counts.
 - **`lazy`** — nodes keep their recorded `taxonomyVersion` and stay readable as-is; they are migrated on their next write. Readers that need current-version shape apply the migration on read.
@@ -184,9 +184,10 @@ Operations:
 - **`add_section`** — insert a new section, optionally after an anchor section. The new section id MUST NOT collide with any id the spec has ever used.
 - **`replace_section`** — replace a section's body and optionally its heading.
 - **`remove_section`** — remove a section; its id is retired.
+- **`move_section`** — move a section to a new position (after a sibling, first, or last) and optionally under a new parent, keeping its id, content, and links.
 - **`relink`** — add or remove typed links on a section.
 
-`replace_section` and `remove_section` MAY carry the section's `baseContentHash`, which makes rebase checks (§9.1) cheap and exact.
+`replace_section`, `remove_section`, and `move_section` MAY carry the section's `baseContentHash`, which makes rebase checks (§9.1) cheap and exact.
 
 A work item that changes several specs produces one proposal per spec. Implementations SHOULD link them through the shared `workItemId` so reviewers see them together.
 
@@ -236,9 +237,9 @@ Many agents finishing many tasks will propose changes to the same specs. The mod
 
 ### 9.1 Stale base and rebase
 
-A proposal's base is **current** when `baseRevisionId` equals the spec's head. It is **rebasable** when every section the proposal touches is unchanged between base and head (same `contentHash`, or identical heading, body, and links) and every `add_section` anchor still exists. A rebasable proposal MAY be rebased mechanically: the implementation updates `baseRevisionId` and records a mechanical check named `rebase` in that tier's `QualitySignal`. Because rebasing only happens when the touched sections are unchanged, existing agent-review and human-gate approvals remain valid.
+A proposal's base is **current** when `baseRevisionId` equals the spec's head. It is **rebasable** when every section the proposal touches is unchanged between base and head (same `contentHash`, or identical heading, body, and links) and every `add_section` and `move_section` anchor (and new parent) still exists. A rebasable proposal MAY be rebased mechanically: the implementation updates `baseRevisionId` and records a mechanical check named `rebase` in that tier's `QualitySignal`. Because rebasing only happens when the touched sections are unchanged, existing agent-review and human-gate approvals remain valid.
 
-A proposal that is neither current nor rebasable moves to `conflicted` with a `stale_base` or `section_removed` conflict naming the section and the revision that changed it. Only the author (or its delegate) can resolve it, by opening a new proposal against the new head with `supersedes` pointing at the old one. The new proposal runs every tier again.
+A proposal that is neither current nor rebasable moves to `conflicted` with a `stale_base` or `section_removed` conflict naming the section and the revision that changed it. A section conflict SHOULD carry the three sides in `baseText`, `headText`, and `proposedText`, so a reviewer or the author can compare them side by side; nothing is merged for them. Only the author (or its delegate) can resolve it, by opening a new proposal against the new head with `supersedes` pointing at the old one. The new proposal runs every tier again.
 
 ### 9.2 Concurrent proposals
 
