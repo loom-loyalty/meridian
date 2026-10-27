@@ -4,7 +4,7 @@
 # Keeps bindings + migrations identical to `test/wrangler.toml` (the
 # Miniflare config) so the CI smoke path matches what adopters see
 # locally. The one difference: this config is deploy-target only —
-# vitest-pool-workers doesn't read it.
+# the vitest plugin doesn't read it.
 
 name = "meridian-runtime-cloudflare-ci"
 main = "./test-worker.ts"

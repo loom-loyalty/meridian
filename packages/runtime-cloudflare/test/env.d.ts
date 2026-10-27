@@ -1,4 +1,4 @@
-/// <reference types="@cloudflare/vitest-pool-workers" />
+/// <reference types="@cloudflare/vitest-plugin/types" />
 
 import type { AgentDurableObject } from "../src/agent-do.js";
 import type { RegistryDurableObject } from "../src/registry-do.js";
