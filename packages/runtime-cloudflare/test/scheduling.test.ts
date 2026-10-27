@@ -13,7 +13,7 @@
  *
  * Coalescing is the tricky one — we don't wait real time; we seed
  * past-due schedules directly via storage so `onAlarm()` sees them
- * as already overdue. The vitest-pool-workers `runInDurableObject`
+ * as already overdue. The vitest plugin's `runInDurableObject`
  * helper is how we reach into the DO's storage for the test setup.
  */
 

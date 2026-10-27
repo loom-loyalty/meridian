@@ -4,7 +4,7 @@
     "outDir": "dist",
     "rootDir": ".",
     "lib": ["ES2022", "DOM"],
-    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers"],
+    "types": ["@cloudflare/workers-types"],
     "noEmit": true
   },
   "include": ["src", "test"]

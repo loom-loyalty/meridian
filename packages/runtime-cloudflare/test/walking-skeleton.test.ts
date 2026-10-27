@@ -1,6 +1,6 @@
 /**
  * Walking-skeleton test — end-to-end spawn → save → load → send →
- * receive → terminate against Miniflare via @cloudflare/vitest-pool-workers.
+ * receive → terminate against Miniflare via @cloudflare/vitest-plugin.
  *
  * M2c update: transport RPC renamed from sendTo/deliver/receive to
  * send/deliver/receiveAll (deliver still exists as the receive-side
