@@ -1,5 +1,12 @@
 # @loom-loyalty/meridian-conformance
 
+## 0.3.8
+
+### Patch Changes
+
+- Updated dependencies [225a231]
+  - @loom-loyalty/meridian-types@0.7.0
+
 ## 0.3.7
 
 ### Patch Changes

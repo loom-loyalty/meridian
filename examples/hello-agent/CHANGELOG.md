@@ -1,5 +1,13 @@
 # @meridian/example-hello-agent
 
+## 0.0.10
+
+### Patch Changes
+
+- Updated dependencies [225a231]
+  - @loom-loyalty/meridian-types@0.7.0
+  - @loom-loyalty/meridian-wire@0.2.9
+
 ## 0.0.9
 
 ### Patch Changes
