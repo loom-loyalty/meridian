@@ -24,6 +24,7 @@ import type {
 } from "@loom-loyalty/meridian-types";
 
 import { meridianError } from "../errors.js";
+import { assertValidTenantId } from "../tenancy.js";
 import type { RegistryDurableObject } from "../registry-do.js";
 import type { LifecyclePlugin } from "./types.js";
 
@@ -127,6 +128,7 @@ export class CfLifecyclePlugin implements LifecyclePlugin {
     // namespace — are rejected here with MRD-CF-LC-005 because the
     // caller addressed this DO with a name that doesn't match the
     // claimed tenant.
+    if (config.tenantId) assertValidTenantId(config.tenantId);
     const nameForAgent = config.tenantId
       ? `${config.tenantId}::${config.id}`
       : config.id;

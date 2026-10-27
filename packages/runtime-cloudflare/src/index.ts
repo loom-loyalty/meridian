@@ -47,6 +47,7 @@ export type { AuthConfig, BearerAuthConfig } from "./auth.js";
 // adopters wiring a test double / local dev path can reuse it.
 export {
   SingleTenantAuthorizer,
+  assertValidTenantId,
   scopedAgentName,
   scopedRegistryKey,
 } from "./tenancy.js";

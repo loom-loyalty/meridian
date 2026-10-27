@@ -19,8 +19,9 @@ codes are never reused or renumbered. Breaking changes bump major.
 | `MRD-CF-RS-*` | [Resources](resources.md)       |     4 |
 | `MRD-CF-EX-*` | [Experimental](experimental.md) |     5 |
 | `MRD-CF-AU-*` | [Auth](auth.md)                 |     3 |
+| `MRD-CF-TN-*` | [Tenancy](tenancy.md)           |     1 |
 
-**Total: 27 codes.** All map to HTTP status codes via `ErrorCategory`.
+**Total: 28 codes.** All map to HTTP status codes via `ErrorCategory`.
 
 ## Error envelope
 
