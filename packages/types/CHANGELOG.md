@@ -1,5 +1,33 @@
 # @loom-loyalty/meridian-types
 
+## 0.5.0
+
+### Minor Changes
+
+- 1c5d370: Collaborative drafting of knowledge proposals (`KNOWLEDGE-SPEC.md` §8.4):
+  add experimental `ProposalDecision`, and optional `contributors` and
+  `decisions` on `SpecChangeProposal` and `TaxonomyChangeProposal`.
+  Contributors to a draft cannot pass its human gate.
+- 73a43b1: Add the experimental knowledge model (`knowledge.ts`, see
+  `specs/patterns/KNOWLEDGE-SPEC.md`): a tenant-defined, versioned taxonomy
+  (`TaxonomyDefinition`, `NodeType`, `RelationType`, `NodeTypeMigration`),
+  the knowledge graph (`KnowledgeNode`, `Relation`), living specs
+  (`Spec`, `SpecSection`, `SpecRevision`), spec impact (`SpecImpact`,
+  `SpecImpactEntry`), and gated change proposals (`SpecChangeProposal`,
+  `TaxonomyChangeProposal`, `ProposalReview`, `ProposalConflict`), plus the
+  `SpecImpactInferrer` extension point. All new types are `@experimental`.
+
+  `WorkItem` gains optional, experimental `parentId`, `typeId` and
+  `specImpact` fields. The stable `WorkItemType` union is unchanged: the
+  default ladder's `program` and `project` rungs are taxonomy types that map
+  to `initiative`, with the tenant type in `typeId`.
+
+- 34f3181: Resolve the knowledge model's open questions (`KNOWLEDGE-SPEC.md` §15):
+  add experimental `ProposalGateConfig` / `ProposalKind` and the optional,
+  experimental `Domain.proposalGates` field for gating spec and taxonomy
+  change proposals, and optional `SpecSection.owningDomain` for sections
+  owned by a different domain than their spec.
+
 ## 0.4.4
 
 ### Patch Changes

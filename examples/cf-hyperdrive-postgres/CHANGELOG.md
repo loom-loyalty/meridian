@@ -1,5 +1,15 @@
 # @meridian/example-cf-hyperdrive-postgres
 
+## 0.0.8
+
+### Patch Changes
+
+- Updated dependencies [1c5d370]
+- Updated dependencies [73a43b1]
+- Updated dependencies [34f3181]
+  - @loom-loyalty/meridian-types@0.5.0
+  - @loom-loyalty/meridian-runtime-cloudflare@0.7.1
+
 ## 0.0.7
 
 ### Patch Changes
