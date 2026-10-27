@@ -137,7 +137,7 @@ The ladder (the ordered list of delivery types from top to bottom) is taxonomy d
 program > project > epic > story > task
 ```
 
-`initiative`, from the original four-type vocabulary in [`WORK-ITEM-SPEC.md`](WORK-ITEM-SPEC.md), remains a valid built-in type. The seed taxonomy (§12) defines it as a delivery type outside the default ladder that, like a program, can sit at the top level, and that can parent projects and epics. Existing initiative → epic → story → task trees stay valid without migration.
+`program` and `project` are taxonomy types, not new built-in values: both map to the built-in `initiative` (`NodeType.workItemType`), so the stable `WorkItemType` union is unchanged. The seed taxonomy (§12) also keeps a plain `initiative` delivery type outside the default ladder, which can sit at the top level and parent projects and epics. Existing initiative → epic → story → task trees stay valid without migration.
 
 Tenants MAY rename, add, or remove rungs. Because the built-in `WorkItemType` union is a stable contract that gates (`GateConfig.workItemType`) and priority engines already key on, each tenant-defined delivery type declares the nearest built-in value in `NodeType.workItemType`. A work item of a tenant-defined type carries that built-in value in `WorkItem.type` and the tenant type in `WorkItem.typeId`. Consumers that do not understand the tenant taxonomy keep working on `type`.
 
@@ -284,8 +284,8 @@ Allowed parents: "none" is an empty `allowedParentTypes` (always a root); "any" 
 | `information-entity`    | architecture | `information-entity`              |                | Information architecture: a business object or data set  |
 | `application`           | architecture | none                              |                | Application architecture: a deployed application         |
 | `application-component` | architecture | `application` (_required_)        |                | Application architecture: a component or service         |
-| `program`               | delivery     | none                              | `program`      | Ladder rung 1                                            |
-| `project`               | delivery     | `program`, `initiative`           | `project`      | Ladder rung 2                                            |
+| `program`               | delivery     | none                              | `initiative`   | Ladder rung 1                                            |
+| `project`               | delivery     | `program`, `initiative`           | `initiative`   | Ladder rung 2                                            |
 | `epic`                  | delivery     | `project`, `initiative`           | `epic`         | Ladder rung 3                                            |
 | `story`                 | delivery     | `epic` (_required_)               | `story`        | Ladder rung 4                                            |
 | `task`                  | delivery     | `story` (_required_)              | `task`         | Ladder rung 5                                            |
@@ -324,7 +324,7 @@ This specification does not define:
 
 ## 14. Versioning and stability
 
-All types in this specification are `@experimental` and may change in minor versions of `@loom-loyalty/meridian-types`. The additions to stable types (`WorkItemType` gains `program` and `project`; `WorkItem` gains optional `parentId`, `typeId`, and `specImpact`) are additive. Adopters that switch exhaustively over `WorkItemType` need to handle the two new values.
+All types in this specification are `@experimental` and may change in minor versions of `@loom-loyalty/meridian-types`. The only change to stable types is additive and optional: `WorkItem` gains `parentId`, `typeId`, and `specImpact`. The stable `WorkItemType` union is unchanged. The `program` and `project` rungs of the default ladder are taxonomy types that map to the built-in `initiative`.
 
 ---
 

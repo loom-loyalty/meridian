@@ -9,19 +9,12 @@ import type { ErrorFeedback } from "./feedback.js";
 import type { NodeTypeId, SpecImpact } from "./knowledge.js";
 
 /**
- * Built-in work item types. The default delivery ladder is
- * program > project > epic > story > task. `initiative` is retained from
- * the original four-type vocabulary and remains valid. Tenants may define
- * further delivery types in their taxonomy (see `WorkItem.typeId` and
- * KNOWLEDGE-SPEC.md §6); each maps to the nearest of these values.
+ * Built-in work item types (stable). The delivery ladder itself is taxonomy
+ * data (KNOWLEDGE-SPEC.md §6): the default ladder's `program` and `project`
+ * rungs, and any tenant-defined delivery type, map to the nearest of these
+ * values, with the tenant type carried in `WorkItem.typeId`.
  */
-export type WorkItemType =
-  | "program"
-  | "project"
-  | "initiative"
-  | "epic"
-  | "story"
-  | "task";
+export type WorkItemType = "initiative" | "epic" | "story" | "task";
 export type WorkItemSource = "human" | "agent" | "feedback";
 export type WorkItemStatus =
   | "proposed"
