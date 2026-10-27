@@ -40,6 +40,7 @@ beforeAll(() => {
   defineAgent({ id: "tnt-alpha", domain: "demo" });
   defineAgent({ id: "tnt-beta", domain: "demo" });
   defineAgent({ id: "tnt-shared", domain: "demo" });
+  defineAgent({ id: "b::c", domain: "demo" });
 });
 
 // Header-based authorizer — enough for tests. Real adopters would
@@ -58,6 +59,7 @@ function tenantAwareWorker() {
       { id: "tnt-alpha", domain: "demo" },
       { id: "tnt-beta", domain: "demo" },
       { id: "tnt-shared", domain: "demo" },
+      { id: "b::c", domain: "demo" },
     ],
     tenancy: { authorizer: new HeaderTenantAuthorizer() },
   });
@@ -255,5 +257,58 @@ describe("createMeridianWorker tenancy", () => {
   it("SingleTenantAuthorizer returns 'default' regardless of input", () => {
     const a = new SingleTenantAuthorizer();
     expect(a.resolveTenantId()).toBe("default");
+  });
+
+  describe("DO-name delimiter (tenant ids must be colon-free)", () => {
+    // `${tenantId}::${agentId}` is only unambiguous when tenant ids
+    // contain no ':'. Without the check, tenant "a::b" + agent "c"
+    // and tenant "a" + agent "b::c" share one Durable Object.
+    for (const bad of ["tnt-x::b", "tnt-x:", ":tnt-x", "a:b"]) {
+      it(`rejects tenant ${JSON.stringify(bad)} with MRD-CF-TN-001`, async () => {
+        const worker = tenantAwareWorker();
+        for (const [method, path] of [
+          ["POST", "/agents/c/spawn"],
+          ["GET", "/agents/c"],
+          ["GET", "/admin/domains"],
+          ["GET", "/admin/agents/c"],
+        ] as const) {
+          const res = await callAs(
+            worker,
+            bad,
+            method,
+            path,
+            method === "POST" ? { domain: "demo" } : undefined,
+          );
+          expect(res.status, `${method} ${path}`).toBe(400);
+          expect((res.body as { error: { code: string } }).error.code).toBe(
+            "MRD-CF-TN-001",
+          );
+        }
+      });
+    }
+
+    it("still allows '::' inside agent ids for a valid tenant", async () => {
+      const worker = tenantAwareWorker();
+      const res = await callAs(
+        worker,
+        "tnt-delim",
+        "POST",
+        "/agents/b::c/spawn",
+        {
+          domain: "demo",
+        },
+      );
+      expect(res.status).toBe(201);
+      expect(res.body).toMatchObject({ id: "b::c", tenantId: "tnt-delim" });
+    });
+
+    it("the DO itself refuses a spawn whose tenantId contains ':'", async () => {
+      // Direct DO RPC (adopter code that bypasses the worker surface):
+      // the name matches, so only the tenant-id check stops it.
+      const stub = env.AGENT.get(env.AGENT.idFromName("tnt-y::b::c"));
+      await expect(
+        stub.spawn({ id: "c", domain: "demo", tenantId: "tnt-y::b" }),
+      ).rejects.toThrow(/MRD-CF-TN-001/);
+    });
   });
 });

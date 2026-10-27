@@ -59,7 +59,9 @@ export type MeridianErrorCode =
   // Auth (M4a — gating via Authorization: Bearer on mutation routes)
   | "MRD-CF-AU-001" // missing Authorization header on a gated route
   | "MRD-CF-AU-002" // Authorization header present but bearer token doesn't match
-  | "MRD-CF-AU-003"; // Authorization scheme other than Bearer (Basic, Digest, etc)
+  | "MRD-CF-AU-003" // Authorization scheme other than Bearer (Basic, Digest, etc)
+  // Tenancy
+  | "MRD-CF-TN-001"; // tenantId contains ':' (would make DO names ambiguous)
 
 interface CodeSpec {
   category: ErrorCategory;
@@ -213,6 +215,12 @@ const CATALOG: Record<MeridianErrorCode, CodeSpec> = {
     retryable: false,
     summary:
       "Authorization header uses an unsupported scheme; only `Bearer <token>` is accepted in v0.1",
+  },
+  "MRD-CF-TN-001": {
+    category: "invalid_argument",
+    retryable: false,
+    summary:
+      "tenantId must not contain ':' — it delimits tenant from agent in Durable Object names",
   },
 };
 
