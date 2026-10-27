@@ -43,7 +43,7 @@ The spec defines six primitives that any platform must implement: agent lifecycl
 
 ### Experimental features
 
-Types marked `@experimental` may change in minor versions. Currently experimental: `PermissionScope`, `InvocationContext`, `SnapshotId`, `RuntimeRequirements`, `QualitySignal`, `EnforcementTier`, `CompetingContext`, everything in `packages/types/src/knowledge.ts` (`TaxonomyDefinition`, `NodeType`, `RelationType`, `KnowledgeNode`, `Relation`, `Spec`, `SpecRevision`, `SpecImpact`, `SpecChangeProposal`, `TaxonomyChangeProposal` and related shapes), and the optional `WorkItem` fields `parentId`, `typeId` and `specImpact`. Stable types are frozen for the v1.x line.
+Types marked `@experimental` may change in minor versions. Currently experimental: `PermissionScope`, `InvocationContext`, `SnapshotId`, `RuntimeRequirements`, `QualitySignal`, `EnforcementTier`, `CompetingContext`, everything in `packages/types/src/knowledge.ts` (`TaxonomyDefinition`, `NodeType`, `RelationType`, `KnowledgeNode`, `Relation`, `Spec`, `SpecRevision`, `SpecImpact`, `SpecChangeProposal`, `TaxonomyChangeProposal` and related shapes), the optional `WorkItem` fields `parentId`, `typeId` and `specImpact`, and the optional `Domain.proposalGates` field. Stable types are frozen for the v1.x line.
 
 ## Coding conventions
 

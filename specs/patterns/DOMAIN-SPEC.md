@@ -57,6 +57,8 @@ Stewards configure quality gates per domain. A gate specifies:
 
 Gates are composable. A domain might require mechanical checks on all work items, agent review on stories, and human gates only on architecture decisions and budget changes.
 
+Gates for changes to the domain's knowledge (spec and taxonomy change proposals) are configured separately, in `proposalGates` (experimental). See [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) §8.2.
+
 ---
 
 ## 6. Cross-domain work

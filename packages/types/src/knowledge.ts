@@ -9,7 +9,7 @@
  * @experimental - all types in this module
  */
 
-import type { DomainId, Timestamp, WorkItemId } from "./primitives.js";
+import type { AgentId, DomainId, Timestamp, WorkItemId } from "./primitives.js";
 import type { EnforcementTier, QualitySignal } from "./quality.js";
 import type { WorkItemType } from "./work-item.js";
 
@@ -368,6 +368,12 @@ export interface SpecSection {
   links?: SpecLink[];
   /** Hash of heading + body + links; used for rebase checks. */
   contentHash?: string;
+  /**
+   * Domain that owns this section when it differs from the spec's.
+   * Inherited from the parent section, then the spec, when absent.
+   * Decides who gates changes to the section (KNOWLEDGE-SPEC.md §5.1).
+   */
+  owningDomain?: DomainId;
 }
 
 /**
@@ -555,6 +561,36 @@ export interface ProposalReview {
   signal: QualitySignal;
   reviewer: Attribution;
   decidedAt: Timestamp;
+}
+
+/**
+ * Which kind of proposal a `ProposalGateConfig` applies to.
+ *
+ * @experimental
+ */
+export type ProposalKind = "spec_change" | "taxonomy_change";
+
+/**
+ * A domain's gate configuration for knowledge change proposals, held in
+ * `Domain.proposalGates`. The mechanical tier always runs, and taxonomy
+ * proposals always include `human_gate`, whatever `enforcement` says.
+ * See KNOWLEDGE-SPEC.md §8.2.
+ *
+ * @experimental
+ */
+export interface ProposalGateConfig {
+  proposalKind: ProposalKind;
+  /**
+   * Restrict this config to specs attached to these node types. A
+   * matching config with `nodeTypeIds` wins over one without.
+   */
+  nodeTypeIds?: NodeTypeId[];
+  /** Which enforcement tiers apply. */
+  enforcement: EnforcementTier[];
+  /** Reviewer agents for the `agent_review` tier. */
+  reviewers?: AgentId[];
+  /** Stewards who may approve at the `human_gate` tier. Defaults to all. */
+  approvers?: string[];
 }
 
 /**

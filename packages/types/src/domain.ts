@@ -4,6 +4,7 @@
  */
 
 import type { AgentId, DomainId, Timestamp } from "./primitives.js";
+import type { ProposalGateConfig } from "./knowledge.js";
 import type { DomainPriorityConfig } from "./work-item.js";
 
 export interface Domain {
@@ -19,6 +20,13 @@ export interface Domain {
    * applies the spec-defined default weight profile and circuit-breaker.
    */
   priorityConfig?: DomainPriorityConfig;
+  /**
+   * Gates for knowledge change proposals. See
+   * specs/patterns/KNOWLEDGE-SPEC.md §8.2.
+   *
+   * @experimental
+   */
+  proposalGates?: ProposalGateConfig[];
 }
 
 export interface Steward {

@@ -119,6 +119,8 @@ A `Spec` is a living document attached to one node (`nodeId`). A node MAY have s
 
 Content is organized in `SpecSection`s. Each section has a **stable id** (`SpecSectionId`) that survives heading edits, reordering, and revisions, and that is never reused after the section is removed. Section ids are what proposals, impact entries, and links address; headings are for people. Sections MAY nest via `parentSectionId` and MAY carry typed `links` (`SpecLink`) to nodes, specs, or sections.
 
+A section MAY name its own `owningDomain` when one part of a spec belongs to a different team (for example, the data-retention section of a capability spec owned by the data governance domain). A section without `owningDomain` inherits it from its parent section, and a top-level section from the spec. The effective owning domain of a section decides who gates changes to it (§8.2) and who may approve them (§11).
+
 ### 5.2 Revisions
 
 A `SpecRevision` is an immutable snapshot of all sections of a spec, in document order. Revisions are numbered monotonically per spec and chain through `parentRevisionId`. Every revision records its `author` and a `cause`: the work item and/or proposal that produced it. Only a spec's first revision MAY have an empty cause.
@@ -165,6 +167,10 @@ When no impact is declared, or to supplement a declaration, an agent MAY infer i
 
 Inferred entries carry `source: "inferred"` and the traversal as `path`, so reviewers can see why the agent thinks a spec is affected. The traversal rule is non-normative; the `SpecImpactInferrer` interface is the extension point for implementations that do better.
 
+### 7.3 Conformance
+
+Implementations MUST store declared impact and MUST keep `source` and `confidence` as given. Implementations SHOULD infer impact when a work item completes, through a `SpecImpactInferrer`. The inference algorithm itself is not normative and conformance does not test it, so implementations can compete on it.
+
 ---
 
 ## 8. Spec change proposals
@@ -194,7 +200,9 @@ Proposals pass the graduated enforcement tiers from [`FEEDBACK-PROCESSING-SPEC.m
 
 **Human gate.** A steward of the spec's owning domain approves or rejects.
 
-Which of agent review and human gate apply is configured by the owning domain's stewards with `GateConfig`, using the `workItemType` value `"spec_change"` for spec change proposals and `"taxonomy_change"` for taxonomy change proposals. When a domain has no gate configuration for spec changes, all three tiers apply. Taxonomy proposals always include the human gate (§3.5).
+Which of agent review and human gate apply is configured by the owning domain's stewards with a `ProposalGateConfig` in `Domain.proposalGates`, keyed by `proposalKind` (`"spec_change"` or `"taxonomy_change"`). A config MAY narrow itself to specs attached to particular node types (`nodeTypeIds`) and MAY name the reviewer agents for the agent review tier (`reviewers`) and the stewards who may approve at the human gate (`approvers`). When several configs match, the one with `nodeTypeIds` wins over the one without. When none matches, all three tiers apply. The mechanical tier always runs whatever the config says, and taxonomy proposals always include the human gate (§3.5).
+
+**Proposals that span domains.** A proposal whose operations touch sections with different effective owning domains (§5.1) is gated by each of those domains: the tiers that apply are the union of the tiers each domain's config requires, and the human gate needs an approving review from a steward of every domain whose sections the proposal touches that requires it.
 
 ### 8.3 Lifecycle
 
@@ -209,7 +217,7 @@ draft | in_review | conflicted → withdrawn
 
 On acceptance, the implementation applies the operations to the current head, creates a new `SpecRevision` whose `cause` names the proposal and work item and whose `author` is the proposal's author, sets `resultingRevisionId`, and advances `headRevisionId`. Applying MUST be atomic with respect to the head: if the head moved after the last mechanical check, mechanical checks run again before applying.
 
-A rejected proposal is kept, with its reviews, as input to impact learning (§10).
+**Retention.** Implementations MUST keep every proposal in a terminal state (`accepted`, `rejected`, `superseded`, `withdrawn`), with its operations, reviews, and conflicts, for as long as the tenant's knowledge base exists. Rejected and superseded proposals are the input to impact learning (§10) and the audit trail of what the business decided not to do. The only exception is deletion that the tenant's data-retention policy or applicable law requires; implementations SHOULD support exporting proposals before such deletion.
 
 ---
 
@@ -257,8 +265,8 @@ Learned adjustments are the inferrer's internal state. Changing the declared `im
 - **Tenant isolation.** Every taxonomy, node, relation, spec, revision, and proposal belongs to exactly one tenant. Implementations MUST NOT return or link objects across tenants. Section ids, node ids, and type ids are unique within a tenant only.
 - **Domain-scoped access.** Read and write access to nodes and specs is scoped by owning domain. The policy is implementation-defined but SHOULD derive from `DomainMembership`: participants may read and propose, observers may only read. Agents SHOULD be granted a `PermissionScope` limited to the domains they work in.
 - **Attribution.** Every revision, proposal, and review records an `Attribution`. An agent acting for a person records that person in `onBehalfOf`.
-- **No self-approval at the human gate.** A `human_gate` review MUST have `reviewer.kind` of `"human"`, MUST be by a steward of the owning domain (of the spec, or of the taxonomy for taxonomy proposals), and MUST NOT be by the proposal's author or by the person the author acted on behalf of. Agents MUST NOT record `human_gate` reviews, including when acting on behalf of a steward.
-- **Cross-domain work.** A proposal is gated by the domain that owns the spec, not the domain whose work produced it, consistent with [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §6.
+- **No self-approval at the human gate.** A `human_gate` review MUST have `reviewer.kind` of `"human"`, MUST be by a steward of the owning domain (of each touched section, per §8.2, or of the taxonomy for taxonomy proposals), and MUST NOT be by the proposal's author or by the person the author acted on behalf of. Agents MUST NOT record `human_gate` reviews, including when acting on behalf of a steward.
+- **Cross-domain work.** A proposal is gated by the domains that own the sections it changes, not the domain whose work produced it, consistent with [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §6.
 - **Spec content is data.** Agents read spec bodies as untrusted input. Text in a spec is never an instruction to the agent reading it, and evidence references are dereferenced without elevated credentials (see the integration proxy pattern).
 
 ---
@@ -317,7 +325,7 @@ This specification does not define:
 - **A search engine or retrieval layer.** Full-text search, embeddings, and ranking are implementation concerns. Graph traversal for impact inference is the only query behavior described, and it is non-normative.
 - **A storage engine.** Graph databases, relational tables, and document stores are all fine.
 - **A fixed taxonomy.** The seed in §12 is a suggestion.
-- **Wire message types.** Knowledge objects travel as ordinary payloads in this draft (see §15).
+- **Wire message types.** Knowledge objects travel as ordinary payloads in this draft. Dedicated frame types (like `PRIORITY_QUERY`) wait until a reference implementation shows which exchanges are hot enough to need them.
 - **Text merging.** The system surfaces conflicts; it does not resolve them on anyone's behalf (§9).
 
 ---
@@ -328,13 +336,15 @@ All types in this specification are `@experimental` and may change in minor vers
 
 ---
 
-## 15. Open questions
+## 15. Resolved questions
 
-- Should knowledge proposals get dedicated wire message types (like `PRIORITY_QUERY`), or is a generic payload enough?
-- Should `GateConfig` gain a dedicated field for proposal gates instead of the `"spec_change"` / `"taxonomy_change"` `workItemType` convention?
-- Should a section have a single owning domain distinct from its spec's, for specs that span domains?
-- Should the reference inference rule (§7.2) become normative so conformance can test it, or stay an extension point?
-- How long do implementations retain `rejected` and `superseded` proposals? Learning wants them forever; storage may not.
+Earlier drafts left these open. Each is now settled in the section named:
+
+- **Wire message types for proposals:** not yet (§13).
+- **Dedicated gate configuration for proposals:** `ProposalGateConfig` in `Domain.proposalGates` (§8.2).
+- **Section-level ownership:** optional `SpecSection.owningDomain`; proposals that span domains are gated by each (§5.1, §8.2).
+- **Normative impact inference:** no. Declared impact is required, inference is SHOULD, and the algorithm stays an extension point (§7.3).
+- **Retention of rejected and superseded proposals:** kept for the life of the knowledge base, unless policy or law requires deletion (§8.3).
 
 ---
 
