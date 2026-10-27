@@ -47,6 +47,18 @@ never appear in tenant-B's `hello`. The isolation is at the CF DO
 level, not a Meridian-enforced prefix — we inherit Cloudflare's
 per-DO storage guarantee.
 
+**Tenant ids must not contain `:`.** Agent ids are arbitrary strings,
+so a colon in a tenant id would make DO names ambiguous: tenant `a::b`
+with agent `c` and tenant `a` with agent `b::c` both name
+`a::b::c` — one Durable Object, shared across tenants. Since 0.6.5 the
+runtime rejects such tenant ids with
+[`MRD-CF-TN-001`](../errors/tenancy.md) both when the authorizer
+resolves a request and when a DO is spawned directly. Authorizers
+should still mint tenant ids from a restricted charset (for example
+`[a-z0-9_-]`).
+
+**Contract test:** `test/tenancy.test.ts` → "DO-name delimiter".
+
 ### 2. Registry scoping — `env.REGISTRY.idFromName(`${tenantId}::default`)`
 
 Each tenant gets its own `RegistryDurableObject` shard. `registry.list()`

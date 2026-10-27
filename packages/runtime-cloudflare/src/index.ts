@@ -27,6 +27,11 @@ export { createMeridianWorker } from "./create-meridian-worker.js";
 export type {
   MeridianWorkerConfig,
   MeridianRouteHandler,
+  MeridianRouteContext,
+  MeridianRoute,
+  MeridianAgentAction,
+  MeridianRequestInfo,
+  MeridianRequestHookResult,
 } from "./create-meridian-worker.js";
 
 // Auth primitives. `enforceBearer` is exported so adopters can gate
@@ -42,6 +47,7 @@ export type { AuthConfig, BearerAuthConfig } from "./auth.js";
 // adopters wiring a test double / local dev path can reuse it.
 export {
   SingleTenantAuthorizer,
+  assertValidTenantId,
   scopedAgentName,
   scopedRegistryKey,
 } from "./tenancy.js";

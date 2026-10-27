@@ -16,6 +16,15 @@
  * Object with its own SQLite database. Same goes for mailbox /
  * schedule storage.
  *
+ * Tenant ids MUST NOT contain `:`. DO names are `${tenantId}::${agentId}`
+ * and agent ids are arbitrary strings, so a colon in a tenant id makes
+ * names ambiguous: tenant `a` + agent `b::c` and tenant `a::b` + agent
+ * `c` would share a Durable Object (as would `a:` + `b` vs `a` + `:b`).
+ * With colon-free tenant ids the first `::` in a name always ends the
+ * tenant id, so every (tenant, agent) pair maps to a distinct name.
+ * Enforced by {@link assertValidTenantId} at request resolution and at
+ * spawn (MRD-CF-TN-001).
+ *
  * Cross-tenant isolation invariants (server-enforced when tenancy
  * is active):
  *
@@ -98,6 +107,21 @@ export const SINGLE_TENANT_CONTEXT: TenantContext = {
 };
 
 /**
+ * Throw MRD-CF-TN-001 unless `tenantId` is safe to embed in a DO name
+ * (contains no `:`). See the module comment for the collision this
+ * prevents.
+ */
+export function assertValidTenantId(tenantId: string): void {
+  if (tenantId.includes(":")) {
+    throw meridianError(
+      "MRD-CF-TN-001",
+      `tenantId ${JSON.stringify(tenantId)} contains ':'`,
+      { context: { tenantId } },
+    );
+  }
+}
+
+/**
  * Compute the name to pass to `env.AGENT.idFromName()` given an
  * agent id + tenant context. Single-tenant runtimes pass the agent
  * id through untouched (preserves pre-M6 DO naming, so existing
@@ -138,5 +162,6 @@ export async function resolveTenantContext(
       "TenantAuthorizer.resolveTenantId returned an invalid value",
     );
   }
+  assertValidTenantId(tenantId);
   return { tenantId, enabled: true };
 }
