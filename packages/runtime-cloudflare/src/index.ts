@@ -27,6 +27,11 @@ export { createMeridianWorker } from "./create-meridian-worker.js";
 export type {
   MeridianWorkerConfig,
   MeridianRouteHandler,
+  MeridianRouteContext,
+  MeridianRoute,
+  MeridianAgentAction,
+  MeridianRequestInfo,
+  MeridianRequestHookResult,
 } from "./create-meridian-worker.js";
 
 // Auth primitives. `enforceBearer` is exported so adopters can gate

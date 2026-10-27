@@ -68,12 +68,71 @@ import {
   type TenantContext,
 } from "./tenancy.js";
 
+/**
+ * Extra context passed to custom route handlers. `tenant()` runs the
+ * configured `TenantAuthorizer` lazily (at most once per request), so
+ * public custom routes that never call it keep working without
+ * credentials. Single-tenant workers resolve to the `"default"` stub.
+ */
+export interface MeridianRouteContext {
+  tenant(): Promise<TenantContext>;
+}
+
 /** Handler for a custom route injected via `config.routes`. */
 export type MeridianRouteHandler = (
   req: Request,
   env: AgentEnv,
   ctx: ExecutionContext,
+  meridian: MeridianRouteContext,
 ) => Promise<Response> | Response;
+
+/** What a built-in `/agents/:id/*` request will do. */
+export type MeridianAgentAction =
+  | "get"
+  | "terminate"
+  | "spawn"
+  | "send"
+  | "broadcast"
+  | "inbox"
+  | "inbox-drain"
+  /** Method/path combination the runtime will answer with 404 or 405. */
+  | "unknown";
+
+/**
+ * Built-in route a request resolved to, as passed to `onRequest`.
+ * Lets adopters meter, rate-limit or audit by operation without
+ * re-parsing paths.
+ */
+export type MeridianRoute =
+  | { kind: "agent"; agentId: AgentId; action: MeridianAgentAction }
+  | { kind: "admin"; action: "domains" }
+  | { kind: "admin"; action: "inspect"; agentId: AgentId }
+  | { kind: "admin"; action: "unknown" };
+
+/** Argument to {@link MeridianWorkerConfig.onRequest}. */
+export interface MeridianRequestInfo {
+  req: Request;
+  env: AgentEnv;
+  ctx: ExecutionContext;
+  /** Tenant resolved by the configured authorizer (or the single-tenant stub). */
+  tenant: TenantContext;
+  route: MeridianRoute;
+}
+
+/**
+ * Return value of `onRequest`:
+ *   • `undefined` — continue to the built-in route.
+ *   • a `Response` — short-circuit; the built-in route does not run.
+ *   • `{ onResponse }` — continue, then call `onResponse` with the
+ *     route's response (errors already mapped to their HTTP status).
+ *     Returning a `Response` from it replaces the original.
+ */
+export type MeridianRequestHookResult =
+  | void
+  | Response
+  | {
+      onResponse(res: Response): Promise<Response | void> | Response | void;
+    };
 
 export interface MeridianWorkerConfig {
   agents: AgentSpec[];
@@ -142,6 +201,21 @@ export interface MeridianWorkerConfig {
    * admin-route scoping, analytics tagging).
    */
   tenancy?: TenancyConfig;
+  /**
+   * Optional pre-dispatch hook for the built-in `/agents/*` and
+   * `/admin/*` routes. Runs after bearer auth and tenant resolution,
+   * with the resolved {@link TenantContext} and the classified
+   * {@link MeridianRoute}. Typical uses: quotas and rate limits per
+   * tenant + operation, usage metering (refund on a failed response
+   * via `onResponse`), audit logging.
+   *
+   * Throwing a `MeridianError` maps to its HTTP status like any
+   * route error. Not called for custom `routes`, `GET /` or the
+   * AgentCard.
+   */
+  onRequest?: (
+    info: MeridianRequestInfo,
+  ) => Promise<MeridianRequestHookResult> | MeridianRequestHookResult;
 }
 
 // Maps MRD-CF-* error categories (from MeridianError.category) to HTTP status
@@ -187,8 +261,12 @@ export function createMeridianWorker(
       //    built-ins or inject admin / monitoring paths.
       const customHandler = config.routes?.[routeKey];
       if (customHandler) {
+        let tenant: Promise<TenantContext> | undefined;
+        const meridian: MeridianRouteContext = {
+          tenant: () => (tenant ??= resolveTenantContext(req, config.tenancy)),
+        };
         try {
-          return await customHandler(req, env, ctx);
+          return await customHandler(req, env, ctx, meridian);
         } catch (err) {
           return errorResponse(err);
         }
@@ -223,7 +301,14 @@ export function createMeridianWorker(
           // tenancy is off, this returns the SINGLE_TENANT_CONTEXT
           // stub and DO naming stays unchanged.
           const tenant = await resolveTenantContext(req, config.tenancy);
-          return await handleAgentRoute(req, env, agentId, subPath, tenant);
+          const route: MeridianRoute = {
+            kind: "agent",
+            agentId,
+            action: agentAction(req.method, subPath),
+          };
+          return await dispatch(config, { req, env, ctx, tenant, route }, () =>
+            handleAgentRoute(req, env, agentId, subPath, tenant),
+          );
         }
 
         // /admin/* routes — EVERY method gated by bearer auth when
@@ -234,7 +319,10 @@ export function createMeridianWorker(
         if (url.pathname.startsWith("/admin/")) {
           enforceBearer(req, config.auth);
           const tenant = await resolveTenantContext(req, config.tenancy);
-          return await handleAdminRoute(req, env, url, tenant);
+          const route = adminRoute(req.method, url.pathname);
+          return await dispatch(config, { req, env, ctx, tenant, route }, () =>
+            handleAdminRoute(req, env, url, tenant),
+          );
         }
       } catch (err) {
         return errorResponse(err);
@@ -246,6 +334,64 @@ export function createMeridianWorker(
       );
     },
   };
+}
+
+// ── onRequest hook ──────────────────────────────────────────
+
+async function dispatch(
+  config: MeridianWorkerConfig,
+  info: MeridianRequestInfo,
+  run: () => Promise<Response>,
+): Promise<Response> {
+  const hook = config.onRequest ? await config.onRequest(info) : undefined;
+  if (hook instanceof Response) return hook;
+  let res: Response;
+  try {
+    res = await run();
+  } catch (err) {
+    // Map here (not in the outer catch) so `onResponse` sees the
+    // same status the client will.
+    res = errorResponse(err);
+  }
+  if (hook) return (await hook.onResponse(res)) ?? res;
+  return res;
+}
+
+function agentAction(method: string, subPath: string): MeridianAgentAction {
+  const key = `${method} ${subPath === "/" ? "" : subPath}`;
+  switch (key) {
+    case "GET ":
+      return "get";
+    case "DELETE ":
+      return "terminate";
+    case "POST /spawn":
+      return "spawn";
+    case "POST /messages":
+      return "send";
+    case "POST /broadcast":
+      return "broadcast";
+    case "GET /inbox":
+      return "inbox";
+    case "POST /inbox/drain":
+      return "inbox-drain";
+    default:
+      return "unknown";
+  }
+}
+
+function adminRoute(method: string, pathname: string): MeridianRoute {
+  if (method !== "GET") return { kind: "admin", action: "unknown" };
+  if (pathname === "/admin/domains")
+    return { kind: "admin", action: "domains" };
+  const m = pathname.match(/^\/admin\/agents\/([^/]+)$/);
+  if (m) {
+    return {
+      kind: "admin",
+      action: "inspect",
+      agentId: decodeURIComponent(m[1]!),
+    };
+  }
+  return { kind: "admin", action: "unknown" };
 }
 
 // ── built-ins ───────────────────────────────────────────────
