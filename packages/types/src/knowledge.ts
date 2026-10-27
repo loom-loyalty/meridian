@@ -564,6 +564,25 @@ export interface ProposalReview {
 }
 
 /**
+ * A question settled while a proposal was drafted (for example in a
+ * shared chat beside a multiplayer draft), recorded apart from the prose
+ * it shaped so a later rewrite cannot silently change what was decided.
+ * See KNOWLEDGE-SPEC.md §8.4.
+ *
+ * @experimental
+ */
+export interface ProposalDecision {
+  /** Unique within the proposal. */
+  id: string;
+  question: string;
+  answer: string;
+  decidedBy: Attribution;
+  decidedAt: Timestamp;
+  /** Sections the decision shaped, when known. */
+  sectionIds?: SpecSectionId[];
+}
+
+/**
  * Which kind of proposal a `ProposalGateConfig` applies to.
  *
  * @experimental
@@ -642,6 +661,13 @@ export interface SpecChangeProposal {
   workItemId?: WorkItemId;
   trigger: SpecChangeTrigger;
   author: Attribution;
+  /**
+   * Everyone other than `author` who changed the draft's content while it
+   * was edited collaboratively. None of them may pass its human gate.
+   */
+  contributors?: Attribution[];
+  /** Questions settled while drafting, kept apart from the prose. */
+  decisions?: ProposalDecision[];
   status: ChangeProposalStatus;
   /** Tier currently pending while `status` is `in_review`. */
   pendingTier?: EnforcementTier;
@@ -723,6 +749,10 @@ export interface TaxonomyChangeProposal {
   migrations?: NodeTypeMigration[];
   rationale: string;
   author: Attribution;
+  /** See `SpecChangeProposal.contributors`. */
+  contributors?: Attribution[];
+  /** See `SpecChangeProposal.decisions`. */
+  decisions?: ProposalDecision[];
   status: ChangeProposalStatus;
   pendingTier?: EnforcementTier;
   reviews: ProposalReview[];

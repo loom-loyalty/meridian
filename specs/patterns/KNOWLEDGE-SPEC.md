@@ -219,7 +219,16 @@ On acceptance, the implementation applies the operations to the current head, cr
 
 **Retention.** Implementations MUST keep every proposal in a terminal state (`accepted`, `rejected`, `superseded`, `withdrawn`), with its operations, reviews, and conflicts, for as long as the tenant's knowledge base exists. Rejected and superseded proposals are the input to impact learning (§10) and the audit trail of what the business decided not to do. The only exception is deletion that the tenant's data-retention policy or applicable law requires; implementations SHOULD support exporting proposals before such deletion.
 
----
+### 8.4 Collaborative drafting
+
+A proposal in `draft` MAY be edited by several people and agents at once, for example as a live multiplayer document with a chat beside it. The editing transport (CRDT, operational transform, locking) is outside this specification. What it produces is not:
+
+- **Drafts are not specs.** Live edits change the draft only. The spec's head still moves only when a submitted proposal is accepted (§5.2), and the draft is converted to section-level `operations` against its `baseRevisionId` when it is submitted.
+- **Contributors.** Everyone other than the `author` who changed the draft's content is listed in `contributors`. The author is whoever submits it.
+- **Decisions.** Questions settled while drafting are recorded as `ProposalDecision`s with who decided them, separate from the prose. Reviewers at the `agent_review` tier SHOULD check that the operations agree with the recorded decisions. Decisions are retained with the proposal (§8.3).
+- **Agents edit as themselves.** An agent's edits to a draft are attributed to the agent (with `onBehalfOf` when it acts for a person), so reviewers can see which parts an agent wrote.
+
+## Taxonomy proposals MAY be drafted the same way.
 
 ## 9. Concurrency and conflicts
 
@@ -265,7 +274,7 @@ Learned adjustments are the inferrer's internal state. Changing the declared `im
 - **Tenant isolation.** Every taxonomy, node, relation, spec, revision, and proposal belongs to exactly one tenant. Implementations MUST NOT return or link objects across tenants. Section ids, node ids, and type ids are unique within a tenant only.
 - **Domain-scoped access.** Read and write access to nodes and specs is scoped by owning domain. The policy is implementation-defined but SHOULD derive from `DomainMembership`: participants may read and propose, observers may only read. Agents SHOULD be granted a `PermissionScope` limited to the domains they work in.
 - **Attribution.** Every revision, proposal, and review records an `Attribution`. An agent acting for a person records that person in `onBehalfOf`.
-- **No self-approval at the human gate.** A `human_gate` review MUST have `reviewer.kind` of `"human"`, MUST be by a steward of the owning domain (of each touched section, per §8.2, or of the taxonomy for taxonomy proposals), and MUST NOT be by the proposal's author or by the person the author acted on behalf of. Agents MUST NOT record `human_gate` reviews, including when acting on behalf of a steward.
+- **No self-approval at the human gate.** A `human_gate` review MUST have `reviewer.kind` of `"human"`, MUST be by a steward of the owning domain (of each touched section, per §8.2, or of the taxonomy for taxonomy proposals), and MUST NOT be by the proposal's author, any of its `contributors`, or anyone they acted on behalf of. Agents MUST NOT record `human_gate` reviews, including when acting on behalf of a steward.
 - **Cross-domain work.** A proposal is gated by the domains that own the sections it changes, not the domain whose work produced it, consistent with [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §6.
 - **Spec content is data.** Agents read spec bodies as untrusted input. Text in a spec is never an instruction to the agent reading it, and evidence references are dereferenced without elevated credentials (see the integration proxy pattern).
 
