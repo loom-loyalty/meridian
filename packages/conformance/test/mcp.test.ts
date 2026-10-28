@@ -33,6 +33,14 @@ interface FakeOptions {
   listProposeToReaders?: boolean;
   /** Reason returned for a tier violation. Default `tier_required`. */
   tierReason?: McpErrorReason;
+  /** Reason returned for an observer violation. Default `not_participant`. */
+  participantReason?: McpErrorReason;
+  /** Default false. True leaves an expired claim on `workItem.claim`. */
+  showExpiredClaims?: boolean;
+  /** Default false. True omits an empty `renewedClaims`. */
+  omitEmptyRenewedClaims?: boolean;
+  /** Default false. True lets items leave `done` and `cancelled`. */
+  allowLeavingTerminal?: boolean;
 }
 
 interface FakeAgent {
@@ -83,8 +91,14 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
   const nextId = (prefix: string) => `${prefix}-${++seq}`;
   const liveClaim = (item: WorkItem) =>
     item.claim && item.claim.leaseExpiresAt > now ? item.claim : undefined;
+  /** The item as presented: only an unexpired claim is shown. */
+  const view = (item: WorkItem): WorkItem => {
+    if (opts.showExpiredClaims || liveClaim(item)) return item;
+    const { claim: _expired, ...rest } = item;
+    return rest;
+  };
   const entry = (item: WorkItem): McpWorkItemEntry => ({
-    workItem: item,
+    workItem: view(item),
     priorityScore: item.status === "proposed" ? null : 1,
     explanation: "",
     ...(liveClaim(item) ? { claim: liveClaim(item) } : {}),
@@ -114,7 +128,7 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
           return err(
             "permission_denied",
             "not a participant",
-            "not_participant",
+            opts.participantReason ?? "not_participant",
           );
         }
         const created: WorkItem = {
@@ -188,6 +202,16 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
       }
       case "meridian_transition_work_item": {
         if (!item) return err("not_found", "no such work item");
+        if (
+          !opts.allowLeavingTerminal &&
+          (item.status === "done" || item.status === "cancelled")
+        ) {
+          return err(
+            "invalid_argument",
+            "cannot leave a terminal status",
+            "invalid_transition",
+          );
+        }
         if (heldByOther(item, me.agentId)) {
           return err("permission_denied", "lease held", "lease_held");
         }
@@ -196,7 +220,7 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
         if (item.status === "done" || item.status === "cancelled") {
           delete item.claim;
         }
-        return ok({ outcome: "applied", workItem: item });
+        return ok({ outcome: "applied", workItem: view(item) });
       }
       case "meridian_link_artifact": {
         if (!item) return err("not_found", "no such work item");
@@ -209,18 +233,28 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
             addedAt: now,
           },
         ];
-        return ok({ workItem: item });
+        return ok({ workItem: view(item) });
       }
       case "meridian_emit_feedback": {
         const signal = args.signal as {
           type: string;
           agentId?: string;
           domain: string;
+          context?: { sourceAgentId?: string };
         };
         if (signal.agentId !== undefined && signal.agentId !== me.agentId) {
           return err("permission_denied", "foreign agentId");
         }
-        if (signal.domain !== me.domain || me.role !== "participant") {
+        const source = signal.context?.sourceAgentId;
+        if (source !== undefined && source !== me.agentId) {
+          return err("permission_denied", "foreign sourceAgentId");
+        }
+        if (
+          signal.domain !== me.domain ||
+          me.role !== "participant" ||
+          (args.workItemId !== undefined &&
+            !(item?.domains.includes(signal.domain) ?? false))
+        ) {
           return err(
             "permission_denied",
             "not a participant",
@@ -239,10 +273,10 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
             renewedClaims.push(claim);
           }
         }
-        return ok({
-          receivedAt: now,
-          ...(renewedClaims.length > 0 ? { renewedClaims } : {}),
-        });
+        const report =
+          signal.type === "heartbeat" &&
+          (renewedClaims.length > 0 || !opts.omitEmptyRenewedClaims);
+        return ok({ receivedAt: now, ...(report ? { renewedClaims } : {}) });
       }
       case "meridian_propose_taxonomy_change": {
         const proposal: TaxonomyChangeProposal = {
@@ -402,6 +436,51 @@ describe("MCP conformance suite", () => {
     );
     expect(r["read-token-propose-denied"]!.status).toBe("failed");
     expect(r["read-token-propose-denied"]!.reason).toMatch(/tier_required/);
+  });
+
+  it("fails observer-cannot-create on the wrong reason", async () => {
+    const r = byName(
+      await runMcpConformance(
+        createFakeTarget({ participantReason: "tier_required" }),
+        { only: ["observer-cannot-create"] },
+      ),
+    );
+    expect(r["observer-cannot-create"]!.status).toBe("failed");
+    expect(r["observer-cannot-create"]!.reason).toMatch(/not_participant/);
+  });
+
+  it("fails claim-after-lease-expiry when an expired claim is still shown", async () => {
+    const r = byName(
+      await runMcpConformance(createFakeTarget({ showExpiredClaims: true }), {
+        only: ["claim-after-lease-expiry"],
+      }),
+    );
+    expect(r["claim-after-lease-expiry"]!.status).toBe("failed");
+    expect(r["claim-after-lease-expiry"]!.reason).toMatch(/workItem\.claim/);
+  });
+
+  it("fails heartbeat-extends-lease when an empty renewedClaims is omitted", async () => {
+    const r = byName(
+      await runMcpConformance(
+        createFakeTarget({ omitEmptyRenewedClaims: true }),
+        { only: ["heartbeat-extends-lease"] },
+      ),
+    );
+    expect(r["heartbeat-extends-lease"]!.status).toBe("failed");
+    expect(r["heartbeat-extends-lease"]!.reason).toMatch(/renewedClaims: \[\]/);
+  });
+
+  it("fails transition-applied-and-release when items can leave cancelled", async () => {
+    const r = byName(
+      await runMcpConformance(
+        createFakeTarget({ allowLeavingTerminal: true }),
+        { only: ["transition-applied-and-release"] },
+      ),
+    );
+    expect(r["transition-applied-and-release"]!.status).toBe("failed");
+    expect(r["transition-applied-and-release"]!.reason).toMatch(
+      /invalid_argument\/invalid_transition/,
+    );
   });
 
   it("passes catalogue with a warning when read tokens list propose tools", async () => {

@@ -1,6 +1,6 @@
 # Meridian MCP Binding Specification
 
-**Version:** 1.0.0-draft.1
+**Version:** 1.0.0-draft.2
 **Status:** Draft (experimental)
 **Date:** October 2026
 **License:** CC BY 4.0
@@ -89,7 +89,7 @@ The effective access of a call is the intersection of:
 2. `PermissionScope.domains` (empty means every domain the agent is a member of);
 3. the agent's declared `memberships`, and, when the agent acts for a human, that human's own memberships: `observer` allows read tools only; `participant` allows propose tools too.
 
-This is the invocation-scope rule of RUNTIME-SPEC.md §4.5 applied to external agents: a token can never do more than the human it acts for. Servers SHOULD list in `tools/list` only the tools the token's tier permits. A call outside the effective access fails with `permission_denied`.
+This is the invocation-scope rule of RUNTIME-SPEC.md §4.5 applied to external agents: a token can never do more than the human it acts for. Servers SHOULD list in `tools/list` only the tools the token's tier permits. Every `meridian_*` tool of §5 MUST still answer a call with a tool result, whether or not the server lists it for the token: a call outside the effective access is an `isError` tool error with `permission_denied`, reason `tier_required` when the tier does not grant the tool and `not_participant` when the agent (or the human it acts for) is an observer or not a member of a domain the call acts on. Only names outside the catalogue may fail as JSON-RPC unknown-tool errors (§7).
 
 Objects a call may read are scoped by owning domain, as KNOWLEDGE-SPEC.md §11 describes. Tenant isolation applies unchanged: no tool returns or links objects across tenants.
 
@@ -97,7 +97,7 @@ Objects a call may read are scoped by owning domain, as KNOWLEDGE-SPEC.md §11 d
 
 ## 5. Tool catalogue
 
-All tools are named `meridian_<verb>_<noun>` in snake*case. The prefix `meridian*` is reserved for tools defined here; a runtime's own extra tools MUST use another prefix and are still bound by §6.
+All tools are named `meridian_<verb>_<noun>` in `snake_case`. The prefix `meridian_` is reserved for tools defined here; a runtime's own extra tools MUST use another prefix and are still bound by §6.
 
 | Tool                               | Tier      | Purpose                                                              |
 | ---------------------------------- | --------- | -------------------------------------------------------------------- |
@@ -155,11 +155,12 @@ Input: optional `kinds`, `domain`, `cursor`, `limit`. Output: `McpInboxOutput` w
 | `includeExplanation` | As in `AgentPriorityQuery`. Default `true`                                                                                        |
 | `cursor`, `limit`    | Pagination (§8)                                                                                                                   |
 
-Output: `McpListWorkItemsOutput`, which mirrors `AgentPriorityResponse` ([`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) §2.3): `items`, `pendingReviewReasons`, `domainBudgetStatus`, `queriedAt`, plus `nextCursor`. Each item is a `McpWorkItemEntry`, a `PrioritizedWorkItem` with optional `rollup`, `blocked`, and `claim`.
+Output: `McpListWorkItemsOutput`, which mirrors `AgentPriorityResponse` ([`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) §2.3): `items`, `pendingReviewReasons`, `domainBudgetStatus`, `queriedAt`, plus `nextCursor`. Each page's `pendingReviewReasons` carries the competing contexts of the escalated items on that page. Each item is a `McpWorkItemEntry`, a `PrioritizedWorkItem` with optional `rollup`, `blocked`, and `claim`.
 
 - `priorityScore` is `null` for an item the engine did not score. The reason is `priorityAnnotation` (`escalated`, `circuit_breaker`) or the status (`proposed` and terminal items are not scored, WORK-ITEM-SPEC.md §6). With `sort: "priority"`, unscored items come last.
 - `cost_of_delay` sorts by `costOfNotBuilding.amountUsd`; `net_value` by `costOfNotBuilding.amountUsd − costToBuild.amountUsd`. With `costBasis: "rollup"`, both use the rolled-up totals.
 - `rollup` (`McpCostRollup`) totals the item and all of its non-cancelled descendants: `costToBuildUsd`, `costOfNotBuildingUsd`, `itemCount`, and `unestimatedCount` (descendants still in `proposed`). A parent's cost of not building may already include its children's, so rolled-up cost of not building is an upper bound. `costBasis` never changes `priorityScore`.
+- `claim` is the item's unexpired claim and is authoritative. Wherever a server presents a `WorkItem` (here, in `meridian_get_work_item`, and in any output), `WorkItem.claim` MUST show only an unexpired claim: it is omitted once the lease has expired or been released.
 - `blocked` lists `McpBlockedReason`s: `escalated`, `circuit_breaker` (PRIORITY-ENGINE-SPEC.md §3, §4), `awaiting_human_gate`, `dependency` (implementation-defined, typically an unfinished item it depends on), `other`.
 
 **`meridian_get_work_item`** — input `workItemId`, optional `includeExplanation`. Output `McpWorkItemContext`:
@@ -193,7 +194,7 @@ Output: `McpListWorkItemsOutput`, which mirrors `AgentPriorityResponse` ([`PRIOR
 - Without `costToBuild`, the server sets `{ amountUsd: 0, basis: "unestimated — …" }`, per WORK-ITEM-SPEC.md §6.
 - One of `type` and `typeId` is required. With `typeId`, `type` defaults to the type's `workItemType`, and a given `type` MUST match it.
 - The parent MUST satisfy the type's `allowedParentTypes`, and a type with `parentRequired` MUST have one. A deprecated type is rejected (KNOWLEDGE-SPEC.md §3.4).
-- The caller MUST be a participant of every listed domain.
+- The caller MUST be a participant of every listed domain; otherwise `permission_denied` (reason `not_participant`).
 
 Output: `{ workItem }`.
 
@@ -202,9 +203,11 @@ Output: `{ workItem }`.
 - `outcome: "applied"` — the status changed. `workItem` is the new state.
 - `outcome: "pending"` — the transition is gated. Mechanical and agent-review tiers run as usual; if a human gate applies, the item waits, and `handoff` says where a steward approves. `pendingTier` names the tier in progress.
 
-Gating follows the item's domains' `GateConfig`s ([`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §5). A transition out of `in_review`, or one that would skip `in_review` for a type whose gates require review, is gated. Moving an `escalated` or `circuit_breaker` item to `cancelled` resolves a steward escalation (PRIORITY-ENGINE-SPEC.md §4), so it always returns `pending` with a human-gate handoff. Transitions the lifecycle does not allow fail with `invalid_argument`. While another agent holds an unexpired claim on the item, the call fails with `permission_denied` (reason `lease_held`). The note is kept in the item's audit trail; where it is stored is implementation-defined. A transition to `done` or `cancelled` that is applied releases any claim.
+A transition is **gated** when one of the item's domains has a `GateConfig` ([`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §5) whose `workItemType` matches the item's type (`typeId` or `type`) and whose `enforcement` includes `human_gate`, and the item moves to `approved`, `deploying`, `validating`, or `done` from `in_review` or from any earlier status (`proposed`, `researching`, `ready`, `in_progress`). A move to `cancelled` is never gated, except for an `escalated` or `circuit_breaker` item: cancelling it resolves a steward escalation (PRIORITY-ENGINE-SPEC.md §4), so it always returns `pending` with a human-gate handoff. Runtimes MAY gate more transitions (for example, always treat `approved` as a person's decision). A gated transition always returns `pending` with a handoff, never an error. The lifecycle allows any move between non-terminal statuses and from a non-terminal status to `done` or `cancelled`; leaving `done` or `cancelled` fails with `invalid_argument` (reason `invalid_transition`). For an escalated or circuit-broken item, claiming it is refused and cancelling it is `pending`; other transitions follow the normal rules. Moving an unclaimed item does not require a claim. While another agent holds an unexpired claim on the item, the call fails with `permission_denied` (reason `lease_held`). The note is kept in the item's audit trail; where it is stored is implementation-defined. A transition to `done` or `cancelled` that is applied releases any claim.
 
-**`meridian_claim_work_item`** — input `workItemId`, optional `leaseSeconds`, `note`. Takes a `WorkItemClaim` (WORK-ITEM-SPEC.md §8). Fails with `already_exists` (reason `lease_held`) when another agent holds an unexpired lease, with `permission_denied` when the caller is not a participant of one of the item's domains, and with `permission_denied` (reason `escalated`) for an escalated or circuit-broken item, which agents MUST NOT pull (PRIORITY-ENGINE-SPEC.md §2.3). Terminal items cannot be claimed (`invalid_argument`). Claiming an item the caller already holds renews it. The lease defaults to 15 minutes; servers MAY clamp `leaseSeconds` and return the lease they granted. Output: `{ claim }`. Claiming does not change status; the agent usually transitions to `in_progress` next.
+**`meridian_claim_work_item`** — input `workItemId`, optional `leaseSeconds`, `note`. Takes a `WorkItemClaim` (WORK-ITEM-SPEC.md §8). Fails with `already_exists` (reason `lease_held`) when another agent holds an unexpired lease, with `permission_denied` (reason `not_participant`) when the caller is not a participant of one of the item's domains, and with `permission_denied` (reason `escalated`) for an escalated or circuit-broken item, which agents MUST NOT pull (PRIORITY-ENGINE-SPEC.md §2.3). Terminal items cannot be claimed (`invalid_argument`). Claiming an item the caller already holds renews it. The lease defaults to 15 minutes; servers MAY clamp `leaseSeconds` and return the lease they granted. Output: `{ claim }`. Claiming does not change status; the agent usually transitions to `in_progress` next.
+
+On `meridian_claim_work_item`, a lease held by another agent is `already_exists` (reason `lease_held`); on every other tool that would act on an item another agent holds, it is `permission_denied` (reason `lease_held`). (`meridian_renew_claim` and `meridian_release_work_item` refuse any caller without the lease with `not_lease_holder`.)
 
 **`meridian_renew_claim`** — input `workItemId`, optional `leaseSeconds`. Extends the caller's lease. Fails with `permission_denied` (reason `not_lease_holder`) when the caller does not hold an unexpired lease. A heartbeat also renews leases (§5.3). Output: `{ claim }`.
 
@@ -220,13 +223,13 @@ Gating follows the item's domains' `GateConfig`s ([`DOMAIN-SPEC.md`](DOMAIN-SPEC
 
 **`meridian_withdraw_proposal`** — input `proposalId`, `reason`. Only for proposals in `draft`, `in_review`, or `conflicted` whose `author` is the calling agent, or whose author acted on behalf of the same human. Otherwise `permission_denied`. Output: `McpProposalView`.
 
-**`meridian_emit_feedback`** — input `signal`, optional `workItemId`. See §5.3. Output: `McpEmitFeedbackOutput` (`receivedAt`, and `renewedClaims` or `correlatedWorkItemId` when they apply).
+**`meridian_emit_feedback`** — input `signal`, optional `workItemId`. See §5.3. Output: `McpEmitFeedbackOutput`: `receivedAt`; for a heartbeat, `renewedClaims`, which MUST be present (empty when nothing was renewed); and `correlatedWorkItemId` when it applies.
 
 ### 5.3 Reporting while working
 
-`meridian_emit_feedback` accepts a `FeedbackSignal` of type `heartbeat`, `cost`, `error`, `metric`, `insight`, or `competing_context`, without `agentId` and `timestamp`. The server sets both: `agentId` is always the authenticated agent, and a supplied `agentId` (or `CompetingContext.sourceAgentId`) that differs is rejected with `permission_denied` ([`FEEDBACK-SPEC.md`](../core/FEEDBACK-SPEC.md) §5). The signal's `domain` MUST be one where the caller is a participant (DOMAIN-SPEC.md §4). `quality` signals are not accepted: a `QualitySignal` carries an enforcement tier and is produced by the tier itself, never by the agent under review. `dependencies` and the remaining expected signals are left out of this draft.
+`meridian_emit_feedback` accepts a `FeedbackSignal` of type `heartbeat`, `cost`, `error`, `metric`, `insight`, or `competing_context`, without the fields the server sets: `agentId`, `timestamp`, the signal's fixed `tier`, and, for `competing_context`, `CompetingContext.sourceAgentId`. A client MAY still send them. `agentId` and `sourceAgentId` are always the authenticated agent, and a supplied value that differs is rejected with `permission_denied` ([`FEEDBACK-SPEC.md`](../core/FEEDBACK-SPEC.md) §5); `tier` is the one FEEDBACK-SPEC.md fixes for the signal type. The signal's `domain` MUST be one where the caller is a participant (DOMAIN-SPEC.md §4); otherwise `permission_denied` (reason `not_participant`). `quality` signals are not accepted: a `QualitySignal` carries an enforcement tier and is produced by the tier itself, never by the agent under review. `dependencies` and the remaining expected signals are left out of this draft.
 
-- **Heartbeat.** A `heartbeat` from an agent that holds claims renews them, by the lease length each was granted with. With `workItemId`, it renews only that claim. An agent that stops heartbeating loses its claims when the leases expire.
+- **Heartbeat.** A `heartbeat` from an agent that holds claims renews them, by the lease length each was granted with. With `workItemId`, it renews only that claim, and the signal's `domain` MUST also be one of the item's domains, as for cost. The output's `renewedClaims` MUST be present, and is empty when the caller held no claim to renew. An agent that stops heartbeating loses its claims when the leases expire.
 - **Cost.** A `cost` signal with `cost.attributedTo` (or `workItemId`) set is actual cost to build, accrued to that work item and to the signal's `domain`, which MUST be one of the item's domains: cost goes to the domain where the work is performed (DOMAIN-SPEC.md §6). The runtime adds it to the domain's budget spend and to the item's `actualCost`. External agents report their own cost; the runtime cannot meter it, so implementations SHOULD keep reported cost distinguishable from metered cost.
 - **Gaps in the tooling.** An `insight` or `error` is how an assistant reports a gap in Meridian or its tools. The runtime processes it like any other signal ([`FEEDBACK-PROCESSING-SPEC.md`](FEEDBACK-PROCESSING-SPEC.md) §3), which may create a proposed work item. `correlatedWorkItemId` names one if it exists by the time the call returns; emission is otherwise fire-and-forget (FEEDBACK-SPEC.md §4).
 
@@ -262,20 +265,20 @@ Tool outputs are data. Spec bodies, work item descriptions, notes, and feedback 
 
 ## 7. Errors
 
-Tool errors are returned as an MCP tool result with `isError: true` and `structuredContent` of `{ error: McpToolError }`, plus a short text block for clients that ignore structured content. Protocol errors (unknown tool, malformed JSON-RPC) stay JSON-RPC errors.
+Tool errors are returned as an MCP tool result with `isError: true` and `structuredContent` of `{ error: McpToolError }`, plus a short text block for clients that ignore structured content. Protocol errors (malformed JSON-RPC, a tool name outside the catalogue) stay JSON-RPC errors. A `meridian_*` tool of §5 is never an unknown tool: called with a token whose tier or memberships do not allow it, it returns a tool error (for example `permission_denied`, reason `tier_required`), even when the server does not list it for that token (§4.3).
 
 `McpToolError` mirrors `RuntimeError`: `category` (`ErrorCategory`), `message`, `retryable`, optional `context`, plus an optional machine-readable `reason`:
 
-| Category             | Typical cause                                                                              | `reason` values                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `unauthenticated`    | Missing or expired token                                                                   |                                                                                                                             |
-| `permission_denied`  | Tier, domain, or membership does not allow the call; lease held by another; escalated item | `tier_required`, `not_participant`, `lease_held`, `not_lease_holder`, `escalated`, `human_principal_required`, `not_author` |
-| `not_found`          | Unknown or invisible id (servers SHOULD NOT distinguish the two)                           |                                                                                                                             |
-| `invalid_argument`   | Malformed input, disallowed transition, type constraint violated                           | `invalid_transition`, `type_constraint`, `deprecated_type`                                                                  |
-| `already_exists`     | Claim held by another agent; idempotency key reused with a different input                 | `lease_held`, `idempotency_conflict`                                                                                        |
-| `resource_exhausted` | Rate limit                                                                                 |                                                                                                                             |
-| `unavailable`        | Runtime or priority engine temporarily unreachable                                         |                                                                                                                             |
-| `internal`           | Anything else                                                                              |                                                                                                                             |
+| Category             | Typical cause                                                                                                                                                  | `reason` values                                                                                                             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `unauthenticated`    | Missing or expired token                                                                                                                                       |                                                                                                                             |
+| `permission_denied`  | Tier does not grant the tool (`tier_required`); observer or non-member of a domain the call acts on (`not_participant`); lease held by another; escalated item | `tier_required`, `not_participant`, `lease_held`, `not_lease_holder`, `escalated`, `human_principal_required`, `not_author` |
+| `not_found`          | Unknown or invisible id (servers SHOULD NOT distinguish the two)                                                                                               |                                                                                                                             |
+| `invalid_argument`   | Malformed input, disallowed transition, type constraint violated                                                                                               | `invalid_transition`, `type_constraint`, `deprecated_type`                                                                  |
+| `already_exists`     | Claim held by another agent; idempotency key reused with a different input                                                                                     | `lease_held`, `idempotency_conflict`                                                                                        |
+| `resource_exhausted` | Rate limit                                                                                                                                                     |                                                                                                                             |
+| `unavailable`        | Runtime or priority engine temporarily unreachable                                                                                                             |                                                                                                                             |
+| `internal`           | Anything else                                                                                                                                                  |                                                                                                                             |
 
 A `pending` transition and a `conflicted` proposal are results, not errors.
 
@@ -297,8 +300,8 @@ A runtime is **Meridian MCP binding conformant** when:
 
 Minimum scenarios for a conformance suite:
 
-1. A `read` token calls a propose tool: `permission_denied`, reason `tier_required`.
-2. An agent in a domain as `observer` creates a work item there: `permission_denied`.
+1. A `read` token calls a propose tool: a tool result (not a JSON-RPC error) with `permission_denied`, reason `tier_required`.
+2. An agent in a domain as `observer` creates a work item there: `permission_denied`, reason `not_participant`.
 3. Two agents claim one item: the second gets `already_exists`, reason `lease_held`. After the first lease expires, the second claim succeeds.
 4. A heartbeat from the holder extends `leaseExpiresAt`.
 5. A transition through a human-gated `GateConfig` returns `pending` with a handoff, and the item's status is unchanged.
@@ -306,6 +309,12 @@ Minimum scenarios for a conformance suite:
 7. An emitted signal with a foreign `agentId`: `permission_denied`.
 8. `meridian_list_work_items` returns well-typed entries, with `priorityScore: null` and `pendingReviewReasons` populated for an escalated item.
 9. No tool call, with any input, produces a `human_gate` review.
+
+Fixtures and hooks:
+
+- Scenarios that create work items use the domain's root work item type: rung 0 of the domain's resolved ladder, as `meridian_get_taxonomy` with `domain` returns it (`resolved.ladder[0]`). A suite's target configuration MAY name it directly (the conformance package's `rootWorkItemTypeId`), but it MUST be that rung.
+- Scenarios that move work items rely only on transitions that are ungated under §5.2, such as `proposed → researching → cancelled`; scenario 5 needs the runtime to arrange an item with a gated transition.
+- Scenario 9 needs a runtime-side hook, such as a count of `human_gate` reviews recorded during the run: reviews are not observable through the binding alone.
 
 Ordering, ranking, search quality, and impact inference are not conformance-gated, consistent with PRIORITY-ENGINE-SPEC.md §7 and KNOWLEDGE-SPEC.md §7.3.
 

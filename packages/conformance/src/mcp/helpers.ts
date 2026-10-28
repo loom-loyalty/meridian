@@ -126,7 +126,7 @@ async function rawCall(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     fail(
-      `${name} threw instead of returning a tool result (a protocol error, MCP-SPEC.md §7): ${message}`,
+      `${name} threw instead of returning a tool result: every meridian_* tool answers with a tool result, listed or not, and only names outside the catalogue are protocol errors (MCP-SPEC.md §4.3, §7): ${message}`,
     );
   }
 }

@@ -108,7 +108,11 @@ export interface McpConformanceTarget {
   agent(opts: McpAgentOptions): Promise<McpAgentClient>;
   /** A domain where minted agents participate. */
   domain: string;
-  /** A delivery node type id creatable without a parent in `domain`. */
+  /**
+   * The domain's root work item type: rung 0 of `domain`'s resolved
+   * ladder, as `meridian_get_taxonomy` with `domain` returns it
+   * (`resolved.ladder[0]`), creatable without a parent (MCP-SPEC.md §9).
+   */
   rootWorkItemTypeId: string;
   /**
    * Make every outstanding lease lapse (advance a clock, or sleep past a
@@ -118,7 +122,9 @@ export interface McpConformanceTarget {
   /** Short lease (seconds) the server accepts, used with `expireLeases`. */
   shortLeaseSeconds?: number;
   /**
-   * Arrange a work item whose next transition is human-gated and which
+   * Arrange a work item whose transition to `to` is gated under
+   * MCP-SPEC.md §5.2 (for example a type with a `human_gate` `GateConfig`
+   * moving to `approved`) and which
    * `agent` may attempt (it is a participant and no other agent holds a
    * claim). Without it, `gated-transition-pending` is skipped.
    */
@@ -136,7 +142,9 @@ export interface McpConformanceTarget {
   escalatedWorkItem?(): Promise<string>;
   /**
    * Number of `human_gate` reviews recorded since the suite started, by
-   * any means. Checked last; without it, `no-human-gate-review` is skipped.
+   * any means. A runtime-side hook: reviews are not observable through the
+   * binding alone (MCP-SPEC.md §9). Checked last; without it,
+   * `no-human-gate-review` is skipped.
    */
   humanGateReviewCount?(): Promise<number>;
 }

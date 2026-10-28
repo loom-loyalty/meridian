@@ -284,8 +284,8 @@ const catalogue: McpConformanceScenario = {
 const readTokenProposeDenied: McpConformanceScenario = {
   name: "read-token-propose-denied",
   description:
-    "§9.1: a read token calling a propose tool gets permission_denied, reason tier_required",
-  specRef: "§9.1, §4.1",
+    "§9.1: a read token calling a propose tool, listed or not, gets a tool result (not a JSON-RPC error) with permission_denied, reason tier_required",
+  specRef: "§9.1, §4.1, §4.3, §7",
   async run(target) {
     const reader = await target.agent({ tier: "read" });
     await callError(
@@ -306,8 +306,8 @@ const readTokenProposeDenied: McpConformanceScenario = {
 const observerCannotCreate: McpConformanceScenario = {
   name: "observer-cannot-create",
   description:
-    "§9.2: a propose token whose agent is an observer of the domain cannot create a work item there",
-  specRef: "§9.2, §4.3",
+    "§9.2: a propose token whose agent is an observer of the domain cannot create a work item there: permission_denied, reason not_participant",
+  specRef: "§9.2, §4.3, §7",
   async run(target) {
     const observer = await target.agent({
       tier: "propose",
@@ -323,7 +323,7 @@ const observerCannotCreate: McpConformanceScenario = {
         costOfNotBuilding: { amountUsd: 1, basis: "conformance fixture" },
         confidence: 0.5,
       },
-      { category: "permission_denied" },
+      { category: "permission_denied", reason: "not_participant" },
     );
   },
 };
@@ -364,8 +364,8 @@ const secondClaimLeaseHeld: McpConformanceScenario = {
 const claimAfterLeaseExpiry: McpConformanceScenario = {
   name: "claim-after-lease-expiry",
   description:
-    "§9.3: after the first agent's lease lapses, a second agent's claim succeeds",
-  specRef: "§9.3",
+    "§9.3: after the first agent's lease lapses, the item shows no claim and a second agent's claim succeeds",
+  specRef: "§9.3, §5.1",
   requires: "expireLeases",
   async run(target) {
     const a = await propose(target);
@@ -378,6 +378,17 @@ const claimAfterLeaseExpiry: McpConformanceScenario = {
         : {}),
     });
     await target.expireLeases!();
+    const lapsed = await callOk(b, "meridian_get_work_item", {
+      workItemId: item.id,
+    });
+    check(
+      lapsed.item.claim === undefined,
+      `get_work_item: an expired claim must be omitted from item.claim, got ${show(lapsed.item.claim)}`,
+    );
+    check(
+      lapsed.item.workItem.claim === undefined,
+      `get_work_item: an expired claim must be omitted from workItem.claim, got ${show(lapsed.item.workItem.claim)}`,
+    );
     const out = await callOk(b, "meridian_claim_work_item", {
       workItemId: item.id,
     });
@@ -388,10 +399,18 @@ const claimAfterLeaseExpiry: McpConformanceScenario = {
 const heartbeatExtendsLease: McpConformanceScenario = {
   name: "heartbeat-extends-lease",
   description:
-    "§9.4: a heartbeat from the holder, correlated to the item, renews its claim",
+    "§9.4: a heartbeat from the holder, correlated to the item, renews its claim; a heartbeat with nothing to renew reports renewedClaims: []",
   specRef: "§9.4, §5.3",
   async run(target) {
     const a = await propose(target);
+    // The server sets the fixed tier (MCP-SPEC.md §5.3), so omit it here.
+    const idle = await callOk(a, "meridian_emit_feedback", {
+      signal: { type: "heartbeat", domain: target.domain, status: "running" },
+    });
+    check(
+      Array.isArray(idle.renewedClaims) && idle.renewedClaims.length === 0,
+      `emit_feedback: a heartbeat with no claims must report renewedClaims: [] (MCP-SPEC.md §5.3), got ${show(idle)}`,
+    );
     const item = await createItem(target, a, "heartbeat-extends-lease");
     const before = checkClaim(
       (await callOk(a, "meridian_claim_work_item", { workItemId: item.id }))
@@ -410,7 +429,7 @@ const heartbeatExtendsLease: McpConformanceScenario = {
     );
     check(
       Array.isArray(out.renewedClaims),
-      `emit_feedback: a heartbeat from a holder must report renewedClaims, got ${show(out)}`,
+      `emit_feedback: a heartbeat must report renewedClaims, got ${show(out)}`,
     );
     const renewed = out.renewedClaims.find((c) => c.workItemId === item.id);
     check(
@@ -528,7 +547,7 @@ const taxonomyProposalHandoff: McpConformanceScenario = {
 const foreignAgentIdRejected: McpConformanceScenario = {
   name: "foreign-agent-id-rejected",
   description:
-    "§9.7: a signal carrying another agent's agentId is rejected with permission_denied",
+    "§9.7: a signal carrying another agent's agentId, or a competing context with another agent's sourceAgentId, is rejected with permission_denied",
   specRef: "§9.7, §5.3",
   async run(target) {
     const a = await propose(target);
@@ -538,6 +557,27 @@ const foreignAgentIdRejected: McpConformanceScenario = {
       a,
       "meridian_emit_feedback",
       { signal: { ...heartbeat(target), agentId: other.agentId } },
+      { category: "permission_denied" },
+    );
+    const item = await createItem(target, a, "foreign-agent-id-rejected");
+    await callError(
+      a,
+      "meridian_emit_feedback",
+      {
+        signal: {
+          type: "competing_context",
+          domain: target.domain,
+          context: {
+            sourceAgentId: other.agentId,
+            contestedWorkItemId: item.id,
+            concern: "cost_risk",
+            impact: { blastRadius: "isolated" },
+            argument: "conformance: foreign sourceAgentId",
+            confidence: 0.5,
+          },
+        },
+        workItemId: item.id,
+      },
       { category: "permission_denied" },
     );
   },
@@ -612,7 +652,7 @@ const errorEnvelope: McpConformanceScenario = {
 const transitionAppliedAndRelease: McpConformanceScenario = {
   name: "transition-applied-and-release",
   description:
-    "§5.2: an ungated transition is applied; an applied transition to cancelled releases the claim",
+    "§5.2: ungated transitions (proposed → researching → cancelled) are applied; an applied transition to cancelled releases the claim; leaving cancelled is invalid_argument/invalid_transition",
   specRef: "§5.2",
   async run(target) {
     const a = await propose(target);
@@ -648,8 +688,18 @@ const transitionAppliedAndRelease: McpConformanceScenario = {
       `get_work_item: expected status cancelled, got ${ctx.item.workItem.status}`,
     );
     check(
-      ctx.item.claim === undefined,
-      `get_work_item: an applied transition to cancelled releases the claim, but item.claim is ${show(ctx.item.claim)}`,
+      ctx.item.claim === undefined && ctx.item.workItem.claim === undefined,
+      `get_work_item: an applied transition to cancelled releases the claim, but item.claim is ${show(ctx.item.claim)} and workItem.claim is ${show(ctx.item.workItem.claim)}`,
+    );
+    await callError(
+      a,
+      "meridian_transition_work_item",
+      {
+        workItemId: item.id,
+        to: "researching",
+        note: "conformance: leaving a terminal status",
+      },
+      { category: "invalid_argument", reason: "invalid_transition" },
     );
   },
 };

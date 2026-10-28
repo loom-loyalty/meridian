@@ -262,7 +262,10 @@ export interface McpCostRollup {
 export interface McpWorkItemEntry extends PrioritizedWorkItem {
   rollup?: McpCostRollup;
   blocked?: McpBlockedReason[];
-  /** The unexpired claim, if any. */
+  /**
+   * The unexpired claim, if any. Authoritative; `workItem.claim` MUST also
+   * show only an unexpired claim (MCP-SPEC.md §5.1).
+   */
   claim?: WorkItemClaim;
 }
 
@@ -508,6 +511,7 @@ export interface McpListWorkItemsInput extends McpPageInput {
  */
 export interface McpListWorkItemsOutput {
   items: McpWorkItemEntry[];
+  /** Competing contexts of the escalated items on this page. */
   pendingReviewReasons?: CompetingContext[];
   domainBudgetStatus?: string;
   queriedAt: Timestamp;
@@ -921,21 +925,48 @@ export type McpEmittableFeedback =
   | CompetingContextFeedback;
 
 /**
- * An emittable signal without the fields the server sets. A supplied
- * `agentId` that is not the caller's is rejected.
+ * An emittable signal without the fields the server sets: `agentId`,
+ * `timestamp`, the fixed `tier`, and `CompetingContext.sourceAgentId`. A
+ * client may still send them; a supplied `agentId` or `sourceAgentId`
+ * that is not the caller's is rejected (MCP-SPEC.md §5.3).
  *
  * @experimental
  */
-export type McpFeedbackSignalInput = WithoutServerFields<McpEmittableFeedback>;
+export type McpFeedbackSignalInput =
+  | WithoutServerFields<Exclude<McpEmittableFeedback, CompetingContextFeedback>>
+  | McpCompetingContextSignalInput;
 
 /**
- * Distributes over a signal union, making `agentId` and `timestamp`
- * optional on each member.
+ * A competing context as submitted: `sourceAgentId` is set by the server.
+ *
+ * @experimental
  */
-type WithoutServerFields<T> = T extends unknown
-  ? Omit<T, "agentId" | "timestamp"> & {
+export interface McpCompetingContextInput extends Omit<
+  CompetingContext,
+  "sourceAgentId"
+> {
+  sourceAgentId?: AgentId;
+}
+
+/**
+ * A `competing_context` signal as submitted.
+ *
+ * @experimental
+ */
+export type McpCompetingContextSignalInput = Omit<
+  WithoutServerFields<CompetingContextFeedback>,
+  "context"
+> & { context: McpCompetingContextInput };
+
+/**
+ * Distributes over a signal union, making `agentId`, `timestamp`, and the
+ * fixed `tier` optional on each member.
+ */
+type WithoutServerFields<T> = T extends { tier: infer Tier }
+  ? Omit<T, "agentId" | "timestamp" | "tier"> & {
       agentId?: AgentId;
       timestamp?: Timestamp;
+      tier?: Tier;
     }
   : never;
 
@@ -958,7 +989,10 @@ export interface McpEmitFeedbackInput {
  */
 export interface McpEmitFeedbackOutput {
   receivedAt: Timestamp;
-  /** Claims a heartbeat renewed. */
+  /**
+   * Claims a heartbeat renewed. MUST be present for a heartbeat, empty
+   * when nothing was renewed; absent for other signals.
+   */
   renewedClaims?: WorkItemClaim[];
   /** A work item the signal created or joined, if known at return time. */
   correlatedWorkItemId?: WorkItemId;
