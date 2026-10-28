@@ -43,7 +43,7 @@ A work item's place on the ladder is its containment parent, `parentId` (for exa
 
 ### 2.2 Taxonomy-defined ladders
 
-The ladder is data, not a fixed hierarchy. Adopters of [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) define their delivery types and ladder in their taxonomy and may rename, add, or remove rungs. Work items are then knowledge nodes of delivery types: the work item `id` is also its node id, and the graph relates work to the capabilities, processes, and specs it affects.
+The ladder is data, not a fixed hierarchy. Adopters of [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) define their delivery types and ladder in their taxonomy and may rename, add, or remove rungs. A domain may also have its own ladder in place of the tenant default (KNOWLEDGE-SPEC.md §6). Work items are then knowledge nodes of delivery types: the work item `id` is also its node id, and the graph relates work to the capabilities, processes, and specs it affects.
 
 Each tenant-defined delivery type maps to the nearest built-in `WorkItemType`. A work item of such a type carries the built-in value in `type` and the tenant type in `typeId`, so gates (`GateConfig.workItemType`) and priority engines written against the built-in values keep working.
 

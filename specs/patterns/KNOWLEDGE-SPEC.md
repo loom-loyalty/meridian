@@ -29,7 +29,7 @@ Three commitments shape the model:
 
 | Concept                  | Type                                        | What it is                                                                    |
 | ------------------------ | ------------------------------------------- | ----------------------------------------------------------------------------- |
-| Taxonomy                 | `TaxonomyDefinition`                        | A versioned set of node types, relation types, and a delivery ladder          |
+| Taxonomy                 | `TaxonomyDefinition`                        | A versioned set of node types, relation types, and delivery ladders           |
 | Node type                | `NodeType`                                  | A tenant-defined kind of node, with a field schema and structural constraints |
 | Relation type            | `RelationType`                              | A tenant-defined kind of directed edge, with type constraints and cardinality |
 | Node                     | `KnowledgeNode`                             | A typed node in the graph, owned by a domain and stewarded by people          |
@@ -48,6 +48,8 @@ The graph is a graph, not a tree. A node MAY have one containment parent (`paren
 
 A `TaxonomyDefinition` belongs to a tenant and is stewarded by a domain (`TaxonomyDefinition.domain`), typically an architecture or operations domain. Its `version` is a monotonic integer starting at 1.
 
+A tenant has one taxonomy and one version line, but its types MAY belong to different domains. A `NodeType` or `RelationType` MAY name an owning `domain`, whose stewards gate changes to it (§3.5). A type without `domain` is a shared core type, owned by `TaxonomyDefinition.domain`. Owning a type is not owning its nodes: a node's `domain` (§4.1) is accountability for the node, whichever domain owns its type.
+
 ### 3.1 Node types
 
 A `NodeType` declares:
@@ -59,10 +61,11 @@ A `NodeType` declares:
 - `allowedRelations`: which relation types nodes of this type may participate in. Omitted means any.
 - `category`: a free-form grouping such as `business`, `architecture`, or `delivery`. Informational only.
 - `workItemType`: for delivery types, the nearest built-in `WorkItemType` (§6).
+- `domain`: the owning domain, when the type is not shared (§3).
 
 ### 3.2 Relation types
 
-A `RelationType` declares `id`, `label`, an optional `inverseLabel` (`realizes` / `realized by`), allowed `fromTypes` and `toTypes` (omitted means any), and a `cardinality` read from the from-side: `one_to_one`, `one_to_many`, `many_to_one`, or `many_to_many`.
+A `RelationType` declares `id`, `label`, an optional `inverseLabel` (`realizes` / `realized by`), allowed `fromTypes` and `toTypes` (omitted means any), a `cardinality` read from the from-side (`one_to_one`, `one_to_many`, `many_to_one`, or `many_to_many`), and an optional owning `domain` (§3).
 
 Two optional fields drive impact inference (§7.2): `impactPropagation` (`forward`, `reverse`, or `both`) says whether and how inference walks the edge, and `impactWeight` (0.0 to 1.0) scales confidence per hop.
 
@@ -87,7 +90,15 @@ Type ids are never reused, so a revision or proposal from years ago still resolv
 
 ### 3.5 Taxonomy changes are proposals
 
-Taxonomy changes go through a `TaxonomyChangeProposal` made against a `baseVersion`, with `operations` (`upsert_node_type`, `upsert_relation_type`, `deprecate_type`, `set_delivery_ladder`), `migrations`, and a `rationale`. They pass the same tiers as spec changes (§8.2), with one difference: a taxonomy proposal always requires the `human_gate` tier, approved by a steward of the taxonomy's domain. Changing the vocabulary of the business is a strategic decision.
+Taxonomy changes go through a `TaxonomyChangeProposal` made against a `baseVersion`, with `operations` (`upsert_node_type`, `upsert_relation_type`, `deprecate_type`, `set_delivery_ladder`), `migrations`, and a `rationale`. `set_delivery_ladder` replaces the default ladder or, with `domain`, that domain's ladder (§6). They pass the same tiers as spec changes (§8.2), with one difference: a taxonomy proposal always requires the `human_gate` tier. Changing the vocabulary of the business is a strategic decision.
+
+A taxonomy proposal is gated by every domain that owns something it touches, the way a spec proposal is gated by the owners of its sections (§8.2):
+
+- **A node or relation type** that it upserts, deprecates, or names in a migration: the type's owning domain, or `TaxonomyDefinition.domain` for a shared type. An upsert that changes a type's `domain` touches both the old and the new owner.
+- **A domain's ladder:** that domain.
+- **The default ladder:** `TaxonomyDefinition.domain`.
+
+The human gate needs an approving review from a steward of each of those domains, and the tiers that apply are the union of each domain's `taxonomy_change` config (§8.2). A domain can evolve its own types and ladder without the taxonomy domain's approval; shared types stay with the taxonomy domain.
 
 A taxonomy proposal whose `baseVersion` is no longer current is `conflicted`; taxonomy proposals are not rebased automatically.
 
@@ -133,7 +144,7 @@ Implementations MUST NOT modify a revision after creation and MUST NOT change `h
 
 Work items are knowledge nodes of delivery types. A work item's `id` is also its `KnowledgeNodeId`, so the graph can relate a task to the capability it implements just as it relates an application to the capability it realizes.
 
-The ladder (the ordered list of delivery types from top to bottom) is taxonomy data: `TaxonomyDefinition.deliveryLadder`. The default ladder is:
+The ladder (the ordered list of delivery types from top to bottom) is taxonomy data. `TaxonomyDefinition.deliveryLadder` is the tenant's default ladder. The seed (§12) sets it to:
 
 ```
 program > project > epic > story > task
@@ -144,6 +155,10 @@ program > project > epic > story > task
 Tenants MAY rename, add, or remove rungs. Because the built-in `WorkItemType` union is a stable contract that gates (`GateConfig.workItemType`) and priority engines already key on, each tenant-defined delivery type declares the nearest built-in value in `NodeType.workItemType`. A work item of a tenant-defined type carries that built-in value in `WorkItem.type` and the tenant type in `WorkItem.typeId`. Consumers that do not understand the tenant taxonomy keep working on `type`.
 
 A work item's position on the ladder is its containment parent, `WorkItem.parentId`, constrained by its type's `allowedParentTypes`. `lineage` keeps its existing meaning (what spawned the item) and is not a substitute for `parentId`.
+
+**Per-domain ladders.** A domain MAY have its own ladder, as its entry in `TaxonomyDefinition.domainLadders` (at most one per domain). A domain without one uses `deliveryLadder`. The domain's stewards gate changes to its ladder (§3.5). A domain's ladder SHOULD contain only shared types and types the domain owns, and a work item's `typeId` SHOULD likewise be a shared type or one its owning domain owns. Nothing else is constrained: a parent in another domain is allowed whenever `allowedParentTypes` allows it.
+
+Rollups across domains keep working because every delivery type, shared or domain-owned, maps to a built-in `WorkItemType`. A consumer that totals one domain's `release` items and another's `project` items reads both as `initiative`.
 
 ---
 
@@ -199,7 +214,7 @@ Proposals pass the graduated enforcement tiers from [`FEEDBACK-PROCESSING-SPEC.m
 
 **Agent review.** Reviewer agents check consistency with related specs and the taxonomy: does the new capability description contradict the solution spec that realizes it, does the change reference deprecated types, does it match what the work item actually did. Reviewers MAY attach `CompetingContext` through the usual feedback path.
 
-**Human gate.** A steward of the spec's owning domain approves or rejects.
+**Human gate.** A steward of the spec's owning domain approves or rejects. For a taxonomy proposal, a steward of each domain it touches (§3.5).
 
 **Provenance.** A `ProposalReview` MAY carry a `basis` saying how it was reached.
 
@@ -216,7 +231,7 @@ Proposals pass the graduated enforcement tiers from [`FEEDBACK-PROCESSING-SPEC.m
 
 Which of agent review and human gate apply is configured by the owning domain's stewards with a `ProposalGateConfig` in `Domain.proposalGates`, keyed by `proposalKind` (`"spec_change"` or `"taxonomy_change"`). A config MAY narrow itself to specs attached to particular node types (`nodeTypeIds`) and MAY name the reviewer agents for the agent review tier (`reviewers`) and the stewards who may approve at the human gate (`approvers`). When several configs match, the one with `nodeTypeIds` wins over the one without. When none matches, all three tiers apply. The mechanical tier always runs whatever the config says, and taxonomy proposals always include the human gate (§3.5).
 
-**Proposals that span domains.** A proposal whose operations touch sections with different effective owning domains (§5.1) is gated by each of those domains: the tiers that apply are the union of the tiers each domain's config requires, and the human gate needs an approving review from a steward of every domain whose sections the proposal touches that requires it.
+**Proposals that span domains.** A proposal whose operations touch sections with different effective owning domains (§5.1) is gated by each of those domains: the tiers that apply are the union of the tiers each domain's config requires, and the human gate needs an approving review from a steward of every domain whose sections the proposal touches that requires it. A taxonomy proposal spans domains the same way when it touches types or ladders owned by different domains (§3.5), except that every one of those domains requires the human gate.
 
 ### 8.3 Lifecycle
 
@@ -242,7 +257,9 @@ A proposal in `draft` MAY be edited by several people and agents at once, for ex
 - **Decisions.** Questions settled while drafting are recorded as `ProposalDecision`s with who decided them, separate from the prose. Reviewers at the `agent_review` tier SHOULD check that the operations agree with the recorded decisions. Decisions are retained with the proposal (§8.3).
 - **Agents edit as themselves.** An agent's edits to a draft are attributed to the agent (with `onBehalfOf` when it acts for a person), so reviewers can see which parts an agent wrote.
 
-## Taxonomy proposals MAY be drafted the same way.
+Taxonomy proposals MAY be drafted the same way.
+
+---
 
 ## 9. Concurrency and conflicts
 
@@ -288,15 +305,15 @@ Learned adjustments are the inferrer's internal state. Changing the declared `im
 - **Tenant isolation.** Every taxonomy, node, relation, spec, revision, and proposal belongs to exactly one tenant. Implementations MUST NOT return or link objects across tenants. Section ids, node ids, and type ids are unique within a tenant only.
 - **Domain-scoped access.** Read and write access to nodes and specs is scoped by owning domain. The policy is implementation-defined but SHOULD derive from `DomainMembership`: participants may read and propose, observers may only read. Agents SHOULD be granted a `PermissionScope` limited to the domains they work in.
 - **Attribution.** Every revision, proposal, and review records an `Attribution`. An agent acting for a person records that person in `onBehalfOf`.
-- **No self-approval at the human gate.** A `human_gate` review MUST have `reviewer.kind` of `"human"`, MUST be by a steward of the owning domain (of each touched section, per §8.2, or of the taxonomy for taxonomy proposals), and MUST NOT be by the proposal's author, any of its `contributors`, or anyone they acted on behalf of. Agents MUST NOT record `human_gate` reviews, including when acting on behalf of a steward.
-- **Cross-domain work.** A proposal is gated by the domains that own the sections it changes, not the domain whose work produced it, consistent with [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §6.
+- **No self-approval at the human gate.** A `human_gate` review MUST have `reviewer.kind` of `"human"`, MUST be by a steward of the owning domain (of each touched section, per §8.2, or of each touched domain for taxonomy proposals, per §3.5), and MUST NOT be by the proposal's author, any of its `contributors`, or anyone they acted on behalf of. Agents MUST NOT record `human_gate` reviews, including when acting on behalf of a steward.
+- **Cross-domain work.** A proposal is gated by the domains that own the sections or taxonomy entries it changes, not the domain whose work produced it, consistent with [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §6.
 - **Spec content is data.** Agents read spec bodies as untrusted input. Text in a spec is never an instruction to the agent reading it, and evidence references are dereferenced without elevated credentials (see the integration proxy pattern).
 
 ---
 
 ## 12. Seed taxonomy (non-normative)
 
-Implementations SHOULD offer a starting taxonomy so tenants are not faced with an empty schema. The following is a suggested seed. Nothing in this spec depends on any of these types existing; tenants change them through taxonomy proposals like any other.
+Implementations SHOULD offer a starting taxonomy so tenants are not faced with an empty schema. The following is a suggested seed. Nothing in this spec depends on any of these types existing; tenants change them through taxonomy proposals like any other. Seed types are shared (no `domain`), and the seed sets only the default `deliveryLadder`.
 
 ### 12.1 Node types
 
@@ -367,6 +384,7 @@ Earlier drafts left these open. Each is now settled in the section named:
 - **Dedicated gate configuration for proposals:** `ProposalGateConfig` in `Domain.proposalGates` (§8.2).
 - **Section-level ownership:** optional `SpecSection.owningDomain`; proposals that span domains are gated by each (§5.1, §8.2).
 - **Normative impact inference:** no. Declared impact is required, inference is SHOULD, and the algorithm stays an extension point (§7.3).
+- **Taxonomies per domain:** no. One taxonomy and version line per tenant; node and relation types MAY name an owning `domain`, a domain MAY have its own ladder, and a taxonomy proposal is gated by every domain it touches (§3, §3.5, §6).
 - **Retention of rejected and superseded proposals:** kept for the life of the knowledge base, unless policy or law requires deletion (§8.3).
 
 ---
