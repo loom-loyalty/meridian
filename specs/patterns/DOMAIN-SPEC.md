@@ -44,6 +44,7 @@ Agents and humans participate in domains. Participation is declared, not inherit
 - An agent or human can participate in **multiple domains simultaneously.** A Postgres agent might participate in Infrastructure and Revenue. A human engineer might participate in Product and Security.
 - Participation has a role: `participant` (can pull work, emit feedback, propose changes) or `observer` (can view but not act).
 - Membership is dynamic. Agents can be added to or removed from domains at runtime.
+- Members need not be spawned by the runtime. An externally hosted agent, such as a coding session working through the [MCP binding](MCP-SPEC.md) (experimental), declares its participation the same way and is bound by the same roles.
 
 ---
 
