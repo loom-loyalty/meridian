@@ -167,7 +167,7 @@ Everything below is published to npm under `@loom-loyalty/*`.
 | `@loom-loyalty/meridian-wire`               | MessagePack/WebSocket wire protocol                                 | v0.1 (pre-1.0)        |
 | `@loom-loyalty/meridian-priority-reference` | Reference priority engine (WSJF-derived formula + circuit breaker)  | v0.1 (pre-1.0)        |
 | `@loom-loyalty/meridian-runtime-cloudflare` | Cloudflare Workers + Durable Objects runtime adapter                | v0.1 (verified on CF) |
-| `@loom-loyalty/meridian-conformance`        | Runtime + priority conformance test suite                           | v0.1 (pre-1.0)        |
+| `@loom-loyalty/meridian-conformance`        | Runtime, priority, and MCP binding conformance suites               | v0.1 (pre-1.0)        |
 | `@loom-loyalty/meridian-cli`                | `meridian init / gen-token / demo / doctor / inspect / domains` CLI | v0.1 (pre-1.0)        |
 
 ## Roadmap

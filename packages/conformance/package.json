@@ -1,7 +1,7 @@
 {
   "name": "@loom-loyalty/meridian-conformance",
   "version": "0.3.8",
-  "description": "Meridian conformance test suite. Response-shape validation helpers for runtimes and component implementations.",
+  "description": "Meridian conformance test suite. Response-shape validation helpers and scenario suites for runtimes, priority engines, and the MCP binding.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
@@ -18,6 +18,10 @@
     "./runtime": {
       "types": "./dist/runtime/index.d.ts",
       "import": "./dist/runtime/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js"
     }
   },
   "files": [
