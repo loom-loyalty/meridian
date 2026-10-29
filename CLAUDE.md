@@ -43,7 +43,7 @@ The spec defines six primitives that any platform must implement: agent lifecycl
 
 ### Experimental features
 
-Types marked `@experimental` may change in minor versions. Currently experimental: `PermissionScope`, `InvocationContext`, `SnapshotId`, `RuntimeRequirements`, `QualitySignal`, `EnforcementTier`, `CompetingContext`, everything in `packages/types/src/knowledge.ts` (`TaxonomyDefinition`, `NodeType`, `RelationType`, `KnowledgeNode`, `Relation`, `Spec`, `SpecRevision`, `SpecImpact`, `SpecChangeProposal`, `TaxonomyChangeProposal` and related shapes), the optional `WorkItem` fields `parentId`, `typeId` and `specImpact`, and the optional `Domain.proposalGates` field. Stable types are frozen for the v1.x line.
+Types marked `@experimental` may change in minor versions. Currently experimental: `PermissionScope`, `InvocationContext`, `SnapshotId`, `RuntimeRequirements`, `QualitySignal`, `EnforcementTier`, `CompetingContext`, everything in `packages/types/src/knowledge.ts` (`TaxonomyDefinition`, `NodeType`, `RelationType`, `KnowledgeNode`, `Relation`, `Spec`, `SpecRevision`, `SpecImpact`, `SpecChangeProposal`, `TaxonomyChangeProposal`, `DomainDeliveryLadder` and related shapes, including the optional `NodeType.domain`, `RelationType.domain`, `TaxonomyDefinition.domainLadders` and `SetDeliveryLadderOperation.domain` fields), everything in `packages/types/src/mcp.ts` (the MCP binding: `McpToolName`, `McpPermissionTier`, `ExternalAgent`, tool inputs and outputs; see `specs/patterns/MCP-SPEC.md`), `WorkItemClaim`, `WorkItemLink`, the optional `WorkItem` fields `parentId`, `typeId`, `specImpact`, `claim` and `links`, and the optional `Domain.proposalGates` field. Stable types are frozen for the v1.x line.
 
 ## Coding conventions
 
@@ -66,6 +66,7 @@ Types marked `@experimental` may change in minor versions. Currently experimenta
 - `CompetingContext` — machine-readable counter-evidence for priority scoring (see `specs/patterns/PRIORITY-ENGINE-SPEC.md`)
 - `WorkItem` — unit of work with two cost estimates (cost to build, cost of NOT building)
 - `PermissionScope` — what services/methods an agent can access (experimental)
+- `McpToolInputs` / `McpToolOutputs` — the MCP tool contract for assistants and externally hosted agents (experimental; see `specs/patterns/MCP-SPEC.md`)
 - `KnowledgeNode` / `Spec` / `SpecChangeProposal` — tenant-defined knowledge graph, living specs, and the gated proposals that update them (experimental; see `specs/patterns/KNOWLEDGE-SPEC.md`)
 
 ## What not to do

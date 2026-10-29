@@ -13,6 +13,7 @@ These patterns are **strongly recommended** for adopters who want Meridian's dis
 | [`FEEDBACK-PROCESSING-SPEC.md`](FEEDBACK-PROCESSING-SPEC.md) | Optional-tier feedback signals (quality, competing context, pattern recognition) + the five processing mechanisms                                                                               |
 | [`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md)         | Normative data contracts, escalation mechanism, and query protocol for priority engines. Reference formula in [`@loom-loyalty/meridian-priority-reference`](../../packages/priority-reference/) |
 | [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md)                     | Knowledge model: tenant-defined taxonomy, knowledge graph, living specs with revisions, and gated spec change proposals produced by work (experimental)                                         |
+| [`MCP-SPEC.md`](MCP-SPEC.md)                                 | MCP tool binding for assistants and externally hosted agents: read and propose tiers, claims with leases, artifact links, and rules that keep approvals with humans (experimental)              |
 
 ## Where the core/patterns line sits
 

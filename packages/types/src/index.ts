@@ -16,3 +16,4 @@ export * from "./domain.js";
 export * from "./work-item.js";
 export * from "./knowledge.js";
 export * from "./runtime.js";
+export * from "./mcp.js";

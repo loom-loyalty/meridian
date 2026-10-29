@@ -1,6 +1,6 @@
 # Meridian Work Item Schema Specification
 
-**Version:** 1.0.0-draft.2
+**Version:** 1.0.0-draft.3
 **Status:** Draft
 **Date:** October 2026
 **License:** CC BY 4.0
@@ -43,7 +43,7 @@ A work item's place on the ladder is its containment parent, `parentId` (for exa
 
 ### 2.2 Taxonomy-defined ladders
 
-The ladder is data, not a fixed hierarchy. Adopters of [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) define their delivery types and ladder in their taxonomy and may rename, add, or remove rungs. Work items are then knowledge nodes of delivery types: the work item `id` is also its node id, and the graph relates work to the capabilities, processes, and specs it affects.
+The ladder is data, not a fixed hierarchy. Adopters of [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) define their delivery types and ladder in their taxonomy and may rename, add, or remove rungs. A domain may also have its own ladder in place of the tenant default (KNOWLEDGE-SPEC.md §6). Work items are then knowledge nodes of delivery types: the work item `id` is also its node id, and the graph relates work to the capabilities, processes, and specs it affects.
 
 Each tenant-defined delivery type maps to the nearest built-in `WorkItemType`. A work item of such a type carries the built-in value in `type` and the tenant type in `typeId`, so gates (`GateConfig.workItemType`) and priority engines written against the built-in values keep working.
 
@@ -75,6 +75,8 @@ The following fields are optional and `@experimental`:
 - `parentId` — containment parent on the ladder (§2.1).
 - `typeId` — tenant taxonomy type, when it differs from the built-in `type` (§2.2).
 - `specImpact` — the specs and sections this item is expected to change. See [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) §7.
+- `claim` — the agent working the item, under a lease (§8.1).
+- `links` — external evidence such as pull requests and CI runs (§8.2).
 
 ---
 
@@ -156,6 +158,30 @@ Not every work item passes through every status. A simple task may go directly f
 The `in_review` status triggers graduated enforcement: mechanical checks first, then agent review, then human gates (as defined in the Feedback Processing Spec).
 
 For adopters of [`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md), progress and completion also produce spec change proposals against the specs the item affected. Those proposals are gated separately, by the domain that owns each spec, and an accepted proposal records the work item as the cause of the new spec revision.
+
+---
+
+## 8. Claims and links (experimental)
+
+### 8.1 Claims
+
+Participants "can pull work" ([`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §4). A claim is how an agent says it has pulled an item, so two agents do not work it at once.
+
+A `WorkItemClaim` records the `agentId` holding it, the human it acts for (`onBehalfOf`), `claimedAt`, and `leaseExpiresAt`. Claims are leases:
+
+- At most one unexpired claim exists per item. An expired claim is the same as none, and another agent may then claim the item.
+- Only a participant of one of the item's domains may claim it. Escalated and circuit-broken items ([`PRIORITY-ENGINE-SPEC.md`](PRIORITY-ENGINE-SPEC.md) §3, §4) and items in `done` or `cancelled` cannot be claimed.
+- The holder keeps the lease by renewing it, explicitly or with a heartbeat. A holder that stops heartbeating loses the claim when the lease expires.
+- Claiming does not change status. An applied transition to `done` or `cancelled` ends the claim.
+- While a claim is held, only the holder moves the item's status. Stewards MAY break a claim through the implementation's own tools.
+
+Cost the holder reports against the item (`Cost.attributedTo`) is actual cost to build, attributed to the domain where the work is performed (DOMAIN-SPEC.md §6).
+
+### 8.2 Links
+
+`links` lists `WorkItemLink`s: a `kind` (`pull_request`, `branch`, `ci_run`, `session`, or `other`), a `url`, an optional `title`, and who added it and when. Links are evidence for reviewers, not gate outcomes: a CI run linked here is not a `mechanical` pass until the runtime records a `QualitySignal` for it.
+
+The [MCP binding](MCP-SPEC.md) exposes claims and links to externally hosted agents (§5.2 there) and describes how CI, automated review, and pull request approval map onto the enforcement tiers (§5.4 there).
 
 ---
 

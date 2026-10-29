@@ -6,7 +6,7 @@
 import type { DomainId, WorkItemId, AgentId, Timestamp } from "./primitives.js";
 import type { CompetingContext, QualitySignal } from "./quality.js";
 import type { ErrorFeedback } from "./feedback.js";
-import type { NodeTypeId, SpecImpact } from "./knowledge.js";
+import type { Attribution, NodeTypeId, SpecImpact } from "./knowledge.js";
 
 /**
  * Built-in work item types (stable). The delivery ladder itself is taxonomy
@@ -70,6 +70,22 @@ export interface WorkItem {
    */
   specImpact?: SpecImpact;
 
+  /**
+   * The agent currently working this item, under a lease. Absent or
+   * expired means unclaimed. See WORK-ITEM-SPEC.md §8.1.
+   *
+   * @experimental
+   */
+  claim?: WorkItemClaim;
+
+  /**
+   * Links to external evidence: pull requests, branches, CI runs, agent
+   * sessions. See WORK-ITEM-SPEC.md §8.2.
+   *
+   * @experimental
+   */
+  links?: WorkItemLink[];
+
   /** Real dollar cost estimates. */
   costToBuild: CostEstimate;
   costOfNotBuilding: CostEstimate;
@@ -89,6 +105,55 @@ export interface WorkItem {
 
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+/**
+ * A lease an agent holds on a work item while it works it. At most one
+ * unexpired claim exists per item. An expired claim is the same as none.
+ * See WORK-ITEM-SPEC.md §8.1.
+ *
+ * @experimental
+ */
+export interface WorkItemClaim {
+  workItemId: WorkItemId;
+  /** The agent holding the lease. */
+  agentId: AgentId;
+  /** The human the agent acts for, if any. */
+  onBehalfOf?: string;
+  claimedAt: Timestamp;
+  /** When the lease lapses unless renewed. */
+  leaseExpiresAt: Timestamp;
+  /** Lease length granted, in milliseconds; renewals extend by this much. */
+  leaseDurationMs?: number;
+  /** Last renewal, by an explicit renew or a heartbeat. */
+  renewedAt?: Timestamp;
+}
+
+/**
+ * Kind of external artifact linked to a work item.
+ *
+ * @experimental
+ */
+export type WorkItemLinkKind =
+  | "pull_request"
+  | "branch"
+  | "ci_run"
+  | "session"
+  | "other";
+
+/**
+ * A link from a work item to evidence in another system. Links are
+ * evidence for reviewers, not gate outcomes. See WORK-ITEM-SPEC.md §8.2.
+ *
+ * @experimental
+ */
+export interface WorkItemLink {
+  kind: WorkItemLinkKind;
+  url: string;
+  title?: string;
+  /** Who attached the link. Set by the runtime. */
+  addedBy?: Attribution;
+  addedAt?: Timestamp;
 }
 
 export interface CostEstimate {

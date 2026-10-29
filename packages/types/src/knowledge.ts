@@ -183,6 +183,15 @@ export interface NodeType {
    * rungs (e.g. a `"feature"` type that maps to `"story"`).
    */
   workItemType?: WorkItemType;
+  /**
+   * Domain that owns this type: its stewards gate changes to it
+   * (KNOWLEDGE-SPEC.md §3.5). Omitted: a shared core type, owned by the
+   * taxonomy's own `TaxonomyDefinition.domain`. Ownership of the type is
+   * separate from ownership of nodes of the type (`KnowledgeNode.domain`).
+   *
+   * @experimental
+   */
+  domain?: DomainId;
   status: TaxonomyEntryStatus;
   /** Replacement type for a deprecated type, if any. */
   supersededBy?: NodeTypeId;
@@ -227,6 +236,14 @@ export interface RelationType {
   impactPropagation?: "forward" | "reverse" | "both";
   /** Multiplier (0.0 to 1.0) applied to confidence when traversing. */
   impactWeight?: number;
+  /**
+   * Domain that owns this relation type: its stewards gate changes to it
+   * (KNOWLEDGE-SPEC.md §3.5). Omitted: a shared core type, owned by the
+   * taxonomy's own `TaxonomyDefinition.domain`.
+   *
+   * @experimental
+   */
+  domain?: DomainId;
   status: TaxonomyEntryStatus;
   supersededBy?: RelationTypeId;
   introducedIn: number;
@@ -263,6 +280,23 @@ export interface NodeTypeMigration {
 }
 
 /**
+ * A delivery ladder that one domain uses in place of the taxonomy's
+ * default `deliveryLadder`. See KNOWLEDGE-SPEC.md §6.
+ *
+ * @experimental
+ */
+export interface DomainDeliveryLadder {
+  /** The domain this ladder applies to. Its stewards gate changes to it. */
+  domain: DomainId;
+  /**
+   * Ordered from top to bottom. Each entry is a `NodeTypeId` in the
+   * taxonomy's `nodeTypes`, and SHOULD be a shared type or one owned by
+   * `domain`.
+   */
+  ladder: NodeTypeId[];
+}
+
+/**
  * A versioned, tenant-owned taxonomy. Data, not code: the protocol never
  * depends on a particular node or relation type existing.
  *
@@ -274,15 +308,26 @@ export interface TaxonomyDefinition {
   /** Monotonic, starting at 1. Each published change increments it. */
   version: number;
   label: string;
-  /** Domain whose stewards gate taxonomy changes. */
+  /**
+   * Domain whose stewards gate changes to shared types (those without
+   * their own `domain`) and to the default `deliveryLadder`.
+   */
   domain: DomainId;
   nodeTypes: NodeType[];
   relationTypes: RelationType[];
   /**
-   * Delivery ladder, ordered from top (e.g. `"program"`) to bottom (e.g.
-   * `"task"`). Each entry is a `NodeTypeId` in `nodeTypes`.
+   * Default delivery ladder, ordered from top (e.g. `"program"`) to bottom
+   * (e.g. `"task"`). Each entry is a `NodeTypeId` in `nodeTypes`. Used by
+   * every domain without an entry in `domainLadders`.
    */
   deliveryLadder?: NodeTypeId[];
+  /**
+   * Per-domain delivery ladders, at most one per domain. A domain listed
+   * here uses its own ladder instead of `deliveryLadder`.
+   *
+   * @experimental
+   */
+  domainLadders?: DomainDeliveryLadder[];
   /** Migrations applied when moving from `version - 1` to this version. */
   migrations?: NodeTypeMigration[];
   /** Proposal that produced this version. Absent for the initial seed. */
@@ -820,13 +865,21 @@ export interface DeprecateTypeOperation {
 }
 
 /**
- * Replace the delivery ladder.
+ * Replace the default delivery ladder, or one domain's ladder.
  *
  * @experimental
  */
 export interface SetDeliveryLadderOperation {
   op: "set_delivery_ladder";
   ladder: NodeTypeId[];
+  /**
+   * Set this domain's entry in `TaxonomyDefinition.domainLadders` instead
+   * of the default `deliveryLadder`. With `domain`, an empty `ladder`
+   * removes the domain's entry, so it falls back to the default.
+   *
+   * @experimental
+   */
+  domain?: DomainId;
 }
 
 /**
@@ -842,7 +895,8 @@ export type TaxonomyOperation =
 
 /**
  * A proposed change to a taxonomy. Goes through the same gates as a spec
- * change; acceptance publishes `baseVersion + 1`.
+ * change, by every domain that owns a type or ladder it touches
+ * (KNOWLEDGE-SPEC.md §3.5); acceptance publishes `baseVersion + 1`.
  *
  * @experimental
  */
