@@ -73,6 +73,18 @@ export interface McpAgentOptions {
 }
 
 /**
+ * An agent a human started, acting for no one (MCP-SPEC.md §3.1).
+ *
+ * @experimental
+ */
+export interface McpSpawnedAgent {
+  /** Client bound to the spawned agent's own token. */
+  client: McpAgentClient;
+  /** The human user id the server records in `spawnedBy`. */
+  spawnedBy: string;
+}
+
+/**
  * A work item whose next transition is human-gated.
  *
  * @experimental
@@ -130,6 +142,12 @@ export interface McpConformanceTarget {
    */
   gatedTransition?(agent: McpAgentClient): Promise<McpGatedTransitionFixture>;
   /**
+   * Mint a `propose`-tier agent, participant in `domain`, that a human
+   * started and that acts for no one. Without it, `spawned-agent-identity`
+   * is skipped.
+   */
+  spawnedAgent?(): Promise<McpSpawnedAgent>;
+  /**
    * Taxonomy coordinates for a valid taxonomy proposal. Without it,
    * `taxonomy-proposal-handoff` is skipped.
    */
@@ -157,6 +175,7 @@ export interface McpConformanceTarget {
 export type McpConformanceCapability =
   | "expireLeases"
   | "gatedTransition"
+  | "spawnedAgent"
   | "taxonomyProposal"
   | "escalatedWorkItem"
   | "humanGateReviewCount";

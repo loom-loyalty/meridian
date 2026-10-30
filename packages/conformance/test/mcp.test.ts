@@ -41,6 +41,14 @@ interface FakeOptions {
   omitEmptyRenewedClaims?: boolean;
   /** Default false. True lets items leave `done` and `cancelled`. */
   allowLeavingTerminal?: boolean;
+  /** Default false. True offers spawned agents (`spawnedAgent`). */
+  spawned?: boolean;
+  /** Default false. True records a spawned agent as acting for its spawner. */
+  spawnerActsFor?: boolean;
+  /** Default false. True gates moves to `approved` (`gatedTransition`). */
+  gates?: boolean;
+  /** Default false. True leaves requested transitions out of agent inboxes. */
+  omitRequestedEntries?: boolean;
 }
 
 interface FakeAgent {
@@ -48,6 +56,8 @@ interface FakeAgent {
   tier: McpPermissionTier;
   role: "participant" | "observer";
   domain: string;
+  onBehalfOf?: string;
+  spawnedBy?: string;
 }
 
 type Args = Record<string, unknown>;
@@ -85,6 +95,9 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
   const agents = new Map<string, FakeAgent>();
   const items = new Map<string, WorkItem>();
   const proposals = new Map<string, TaxonomyChangeProposal>();
+  /** Gated items, and the pending move each agent requested. */
+  const gated = new Set<string>();
+  const requested = new Map<string, { agentId: string; to: string }>();
   const readSet = new Set<string>(MCP_READ_TOOLS);
 
   const tick = () => (now += 1);
@@ -215,12 +228,52 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
         if (heldByOther(item, me.agentId)) {
           return err("permission_denied", "lease held", "lease_held");
         }
+        if (gated.has(item.id) && args.to === "approved") {
+          requested.set(item.id, { agentId: me.agentId, to: "approved" });
+          return ok({
+            outcome: "pending",
+            workItem: view(item),
+            pendingTier: "human_gate",
+            handoff: handoff(item.id, "approved"),
+          });
+        }
         item.status = args.to as WorkItem["status"];
         item.updatedAt = now;
         if (item.status === "done" || item.status === "cancelled") {
           delete item.claim;
         }
         return ok({ outcome: "applied", workItem: view(item) });
+      }
+      case "meridian_inbox": {
+        const entries = [];
+        if (me.onBehalfOf === undefined && !opts.omitRequestedEntries) {
+          for (const [id, r] of requested) {
+            if (r.agentId !== me.agentId) continue;
+            entries.push({
+              kind: "work_item_transition_requested",
+              since: now,
+              workItem: view(items.get(id)!),
+              handoff: handoff(id, r.to),
+            });
+          }
+        }
+        return ok({
+          principal: {
+            agent: {
+              kind: "agent",
+              id: me.agentId,
+              ...(me.onBehalfOf ? { onBehalfOf: me.onBehalfOf } : {}),
+              ...(me.spawnedBy
+                ? { spawnedBy: { kind: "human", id: me.spawnedBy } }
+                : {}),
+            },
+            tier: me.tier,
+            domains: [
+              { domain: me.domain, role: me.role, humanIsSteward: false },
+            ],
+          },
+          entries,
+        });
       }
       case "meridian_link_artifact": {
         if (!item) return err("not_found", "no such work item");
@@ -316,47 +369,94 @@ function createFakeTarget(opts: FakeOptions = {}): McpConformanceTarget {
     }
   }
 
+  function handoff(id: string, to: string) {
+    return {
+      tier: "human_gate",
+      subject: { kind: "work_item", id, to },
+      domains: [DOMAIN],
+    };
+  }
+
+  function clientFor(me: FakeAgent): McpAgentClient {
+    const { tier } = me;
+    agents.set(me.agentId, me);
+    const client: McpAgentClient = {
+      agentId: me.agentId,
+      async listTools() {
+        const names: string[] = [...MCP_READ_TOOLS];
+        if (tier === "propose" || opts.listProposeToReaders) {
+          names.push(...MCP_PROPOSE_TOOLS);
+        }
+        return [
+          ...names.map((name) => ({
+            name,
+            annotations: readSet.has(name)
+              ? { readOnlyHint: true }
+              : {
+                  readOnlyHint: false,
+                  destructiveHint: name === "meridian_withdraw_proposal",
+                },
+          })),
+          { name: "fake_debug", annotations: { readOnlyHint: true } },
+        ];
+      },
+      async callTool(name, args) {
+        // Round-trip through JSON, as a real transport would.
+        return JSON.parse(
+          JSON.stringify(call(me, name, args)),
+        ) as McpCallResult;
+      },
+    };
+    return client;
+  }
+
   return {
     domain: DOMAIN,
     rootWorkItemTypeId: TYPE_ID,
     shortLeaseSeconds: 1,
-    async agent({ tier, role, domain }) {
-      const me: FakeAgent = {
+    async agent({ tier, role, domain, actsFor }) {
+      return clientFor({
         agentId: nextId("fake-session"),
         tier,
         role: role ?? "participant",
         domain: domain ?? DOMAIN,
-      };
-      agents.set(me.agentId, me);
-      const client: McpAgentClient = {
-        agentId: me.agentId,
-        async listTools() {
-          const names: string[] = [...MCP_READ_TOOLS];
-          if (tier === "propose" || opts.listProposeToReaders) {
-            names.push(...MCP_PROPOSE_TOOLS);
-          }
-          return [
-            ...names.map((name) => ({
-              name,
-              annotations: readSet.has(name)
-                ? { readOnlyHint: true }
-                : {
-                    readOnlyHint: false,
-                    destructiveHint: name === "meridian_withdraw_proposal",
-                  },
-            })),
-            { name: "fake_debug", annotations: { readOnlyHint: true } },
-          ];
-        },
-        async callTool(name, args) {
-          // Round-trip through JSON, as a real transport would.
-          return JSON.parse(
-            JSON.stringify(call(me, name, args)),
-          ) as McpCallResult;
-        },
-      };
-      return client;
+        ...(actsFor ? { onBehalfOf: actsFor } : {}),
+      });
     },
+    ...(opts.spawned
+      ? {
+          async spawnedAgent() {
+            const spawner = "user_spawner";
+            const client = clientFor({
+              agentId: nextId("fake-spawned"),
+              tier: "propose",
+              role: "participant",
+              domain: DOMAIN,
+              ...(opts.spawnerActsFor
+                ? { onBehalfOf: spawner }
+                : { spawnedBy: spawner }),
+            });
+            return { client, spawnedBy: spawner };
+          },
+        }
+      : {}),
+    ...(opts.gates
+      ? {
+          async gatedTransition(agent: McpAgentClient) {
+            const out = await agent.callTool("meridian_create_work_item", {
+              title: "gated",
+              domains: [DOMAIN],
+              typeId: TYPE_ID,
+              costOfNotBuilding: { amountUsd: 10 },
+              confidence: 0.5,
+            });
+            const id = (out.structuredContent as { workItem: WorkItem })
+              .workItem.id;
+            gated.add(id);
+            return { workItemId: id, to: "approved" as const };
+          },
+        }
+      : {}),
     async expireLeases() {
       now += 2 * LEASE_MS;
     },
@@ -392,6 +492,8 @@ describe("MCP conformance suite", () => {
     expect(r["gated-transition-pending"]!.status).toBe("skipped");
     expect(r["gated-transition-pending"]!.reason).toMatch(/gatedTransition/);
     expect(r["escalated-item-unscored"]!.status).toBe("skipped");
+    expect(r["spawned-agent-identity"]!.status).toBe("skipped");
+    expect(r["spawned-agent-identity"]!.reason).toMatch(/spawnedAgent/);
     for (const name of [
       "catalogue",
       "read-token-propose-denied",
@@ -413,8 +515,60 @@ describe("MCP conformance suite", () => {
     expect(summarizeMcpConformance(results)).toMatchObject({
       ok: true,
       failed: 0,
-      skipped: 2,
+      skipped: 3,
     });
+  });
+
+  it("passes spawned-agent-identity and the gated transition with both capabilities", async () => {
+    const r = byName(
+      await runMcpConformance(
+        createFakeTarget({ spawned: true, gates: true }),
+        {
+          only: ["gated-transition-pending", "spawned-agent-identity"],
+        },
+      ),
+    );
+    expect(r["gated-transition-pending"]!.status).toBe("passed");
+    expect(r["spawned-agent-identity"]!.status).toBe("passed");
+    expect(r["spawned-agent-identity"]!.reason).toBeUndefined();
+  });
+
+  it("passes spawned-agent-identity with a note when there is no gated transition", async () => {
+    const r = byName(
+      await runMcpConformance(createFakeTarget({ spawned: true }), {
+        only: ["spawned-agent-identity"],
+      }),
+    );
+    expect(r["spawned-agent-identity"]!.status).toBe("passed");
+    expect(r["spawned-agent-identity"]!.reason).toMatch(/not checked/);
+  });
+
+  it("fails spawned-agent-identity when a spawned agent acts for its spawner", async () => {
+    const r = byName(
+      await runMcpConformance(
+        createFakeTarget({ spawned: true, spawnerActsFor: true }),
+        { only: ["spawned-agent-identity"] },
+      ),
+    );
+    expect(r["spawned-agent-identity"]!.status).toBe("failed");
+    expect(r["spawned-agent-identity"]!.reason).toMatch(/onBehalfOf/);
+  });
+
+  it("fails spawned-agent-identity when the agent's requested move is missing from its inbox", async () => {
+    const r = byName(
+      await runMcpConformance(
+        createFakeTarget({
+          spawned: true,
+          gates: true,
+          omitRequestedEntries: true,
+        }),
+        { only: ["spawned-agent-identity"] },
+      ),
+    );
+    expect(r["spawned-agent-identity"]!.status).toBe("failed");
+    expect(r["spawned-agent-identity"]!.reason).toMatch(
+      /work_item_transition_requested/,
+    );
   });
 
   it("fails second-claim-lease-held when the server does not enforce leases", async () => {

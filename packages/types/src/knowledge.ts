@@ -101,8 +101,29 @@ export interface Attribution {
   id: string;
   /** For agents: the human or domain the agent acted on behalf of, if any. */
   onBehalfOf?: string;
+  /**
+   * For agents: who started the agent, when someone did. Provenance only:
+   * unlike `onBehalfOf`, it gives the spawner no authority over the agent
+   * and does not make the agent act for them (MCP-SPEC.md §3.1).
+   */
+  spawnedBy?: SpawnAttribution;
   /** For agents backed by a model: which model did the work, and why that one. */
   model?: ModelAttribution;
+}
+
+/**
+ * Who started an agent: a person, another agent (with the person it acted
+ * for, if any), or a system component. One level only: a spawner's own
+ * spawner is not recorded here.
+ *
+ * @experimental
+ */
+export interface SpawnAttribution {
+  kind: "human" | "agent" | "system";
+  /** Human user id, `AgentId`, or a system component name. */
+  id: string;
+  /** For an agent spawner: the human it acted on behalf of, if any. */
+  onBehalfOf?: string;
 }
 
 /**
