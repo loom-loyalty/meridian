@@ -1,5 +1,59 @@
 # @loom-loyalty/meridian-types
 
+## 0.8.0
+
+### Minor Changes
+
+- 089e10e: Domain-owned taxonomy types and per-domain delivery ladders
+  (`KNOWLEDGE-SPEC.md` §3, §3.5, §6). All of it is experimental and additive:
+  - optional `domain` on `NodeType` and `RelationType`. Omitted means a shared
+    core type, owned by `TaxonomyDefinition.domain`.
+  - optional `domainLadders` (`DomainDeliveryLadder`: `domain`, `ladder`) on
+    `TaxonomyDefinition`. `deliveryLadder` stays the tenant default.
+  - optional `domain` on `SetDeliveryLadderOperation`, to set (or, with an
+    empty ladder, remove) one domain's ladder.
+
+  Taxonomy proposals are now gated by every domain owning a type or ladder they
+  touch, and always include the human gate for each.
+
+- 089e10e: Experimental MCP binding (`MCP-SPEC.md`): the tool contract a runtime serves
+  over the Model Context Protocol so assistants and externally hosted agents
+  can work inside a Meridian system. All of it is experimental and additive:
+  - new module `mcp.ts`: `McpToolName`, `McpPermissionTier` (`read`,
+    `propose`), `ExternalAgent`, `McpToolInputs` / `McpToolOutputs` for 19
+    `meridian_*` tools, `McpHumanGateHandoff`, `McpToolError`.
+  - `WorkItemClaim` (claim with lease) and `WorkItemLink` (pull request,
+    branch, CI run, session), with optional `WorkItem.claim` and
+    `WorkItem.links` (`WORK-ITEM-SPEC.md` §8).
+
+  No tool approves, rejects, records a review, or changes gates, budgets,
+  stewards, or membership.
+
+- 599e0b8: Spawned agents act as themselves (MCP binding 1.0.0-draft.3). `Attribution`
+  and `ExternalAgent` gain an optional `spawnedBy` (`SpawnAttribution`): who
+  started an agent, recorded as provenance only, so the agent does not act for
+  its spawner, and the spawner is not excluded from approving its work by that
+  alone. `meridian_inbox` now serves agents that act for no one with their own
+  entries, including the new `work_item_transition_requested` kind, instead of
+  `permission_denied`. The conformance suite adds `spawned-agent-identity`
+  (MCP-SPEC.md §9 scenario 10), run when the target provides `spawnedAgent()`.
+
+### Patch Changes
+
+- 089e10e: MCP binding 1.0.0-draft.2 (`MCP-SPEC.md`), resolving conformance review
+  findings. Types: `McpFeedbackSignalInput` makes the server-set `tier`
+  optional, and a `competing_context` signal's `context.sourceAgentId` too
+  (new `McpCompetingContextInput`, `McpCompetingContextSignalInput`); doc
+  comments state that `renewedClaims` is always present for a heartbeat, that
+  `pendingReviewReasons` covers the escalated items on the page, and that
+  only an unexpired claim is shown. Conformance: `observer-cannot-create`
+  requires reason `not_participant`; `claim-after-lease-expiry` requires an
+  expired claim to be omitted; `heartbeat-extends-lease` requires
+  `renewedClaims: []` from a heartbeat with nothing to renew (sent without
+  `tier`); `foreign-agent-id-rejected` also rejects a foreign
+  `sourceAgentId`; `transition-applied-and-release` requires
+  `invalid_argument`/`invalid_transition` when leaving `cancelled`.
+
 ## 0.7.0
 
 ### Minor Changes
