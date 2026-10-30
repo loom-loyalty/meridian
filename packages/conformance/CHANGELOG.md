@@ -1,5 +1,48 @@
 # @loom-loyalty/meridian-conformance
 
+## 0.4.0
+
+### Minor Changes
+
+- 089e10e: MCP binding conformance suite, as the new subpath export
+  `@loom-loyalty/meridian-conformance/mcp`. It runs the minimum scenarios of
+  `MCP-SPEC.md` §9 plus catalogue, error-envelope, transition, and link checks
+  from §5 and §7 against any server: adopters adapt their MCP client to the
+  small `McpAgentClient` interface (`listTools`, `callTool`) and describe the
+  server as an `McpConformanceTarget`. No MCP SDK or other runtime dependency
+  is added. Scenarios that need an optional target capability (lease expiry,
+  a gated transition, a taxonomy proposal, an escalated item, a review count)
+  are reported as skipped without it.
+- 599e0b8: Spawned agents act as themselves (MCP binding 1.0.0-draft.3). `Attribution`
+  and `ExternalAgent` gain an optional `spawnedBy` (`SpawnAttribution`): who
+  started an agent, recorded as provenance only, so the agent does not act for
+  its spawner, and the spawner is not excluded from approving its work by that
+  alone. `meridian_inbox` now serves agents that act for no one with their own
+  entries, including the new `work_item_transition_requested` kind, instead of
+  `permission_denied`. The conformance suite adds `spawned-agent-identity`
+  (MCP-SPEC.md §9 scenario 10), run when the target provides `spawnedAgent()`.
+
+### Patch Changes
+
+- 089e10e: MCP binding 1.0.0-draft.2 (`MCP-SPEC.md`), resolving conformance review
+  findings. Types: `McpFeedbackSignalInput` makes the server-set `tier`
+  optional, and a `competing_context` signal's `context.sourceAgentId` too
+  (new `McpCompetingContextInput`, `McpCompetingContextSignalInput`); doc
+  comments state that `renewedClaims` is always present for a heartbeat, that
+  `pendingReviewReasons` covers the escalated items on the page, and that
+  only an unexpired claim is shown. Conformance: `observer-cannot-create`
+  requires reason `not_participant`; `claim-after-lease-expiry` requires an
+  expired claim to be omitted; `heartbeat-extends-lease` requires
+  `renewedClaims: []` from a heartbeat with nothing to renew (sent without
+  `tier`); `foreign-agent-id-rejected` also rejects a foreign
+  `sourceAgentId`; `transition-applied-and-release` requires
+  `invalid_argument`/`invalid_transition` when leaving `cancelled`.
+- Updated dependencies [089e10e]
+- Updated dependencies [089e10e]
+- Updated dependencies [089e10e]
+- Updated dependencies [599e0b8]
+  - @loom-loyalty/meridian-types@0.8.0
+
 ## 0.3.8
 
 ### Patch Changes
