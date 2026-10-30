@@ -38,6 +38,7 @@ import type {
   ProposalGateConfig,
   ProposalKind,
   RelationType,
+  SpawnAttribution,
   Spec,
   SpecChangeOperation,
   SpecChangeProposal,
@@ -149,6 +150,11 @@ export interface ExternalAgent {
   host: ExternalAgentHost;
   /** The human the agent acts for, if any. */
   onBehalfOf?: string;
+  /**
+   * Who started the agent, if someone did. Provenance only: the agent does
+   * not act for its spawner (MCP-SPEC.md §3.1).
+   */
+  spawnedBy?: SpawnAttribution;
   /** Declared domain participation (DOMAIN-SPEC.md §4). */
   memberships: DomainMembership[];
   permissions: PermissionScope;
@@ -164,7 +170,7 @@ export interface ExternalAgent {
  * @experimental
  */
 export interface McpPrincipal {
-  /** `{ kind: "agent", id, onBehalfOf }`, as recorded on every write. */
+  /** `{ kind: "agent", id, onBehalfOf, spawnedBy }`, as recorded on every write. */
   agent: Attribution;
   host?: ExternalAgentHost;
   tier: McpPermissionTier;
@@ -433,7 +439,21 @@ export interface McpInboxBudgetAlert extends McpInboxEntryBase {
 }
 
 /**
- * An entry in the calling human's inbox.
+ * A transition the calling agent requested is waiting at a human gate.
+ * Only in the inbox of an agent that acts for no human (MCP-SPEC.md §5.1).
+ *
+ * @experimental
+ */
+export interface McpInboxTransitionRequested extends McpInboxEntryBase {
+  kind: "work_item_transition_requested";
+  workItem: WorkItem;
+  /** Where a person decides; `subject.to` is the requested status. */
+  handoff: McpHumanGateHandoff;
+}
+
+/**
+ * An entry in the caller's inbox: the calling human's when the agent acts
+ * for one, otherwise the agent's own (MCP-SPEC.md §5.1).
  *
  * @experimental
  */
@@ -442,7 +462,8 @@ export type McpInboxEntry =
   | McpInboxWorkItemAwaitingGate
   | McpInboxBlockedWorkItem
   | McpInboxProposalConflicted
-  | McpInboxBudgetAlert;
+  | McpInboxBudgetAlert
+  | McpInboxTransitionRequested;
 
 /**
  * Input of `meridian_inbox`.

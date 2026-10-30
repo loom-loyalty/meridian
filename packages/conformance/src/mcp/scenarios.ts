@@ -489,6 +489,73 @@ const gatedTransitionPending: McpConformanceScenario = {
   },
 };
 
+/** Inbox entry kinds addressed to a human, never in an agent's own inbox. */
+const HUMAN_INBOX_KINDS = new Set([
+  "proposal_awaiting_human_gate",
+  "work_item_awaiting_human_gate",
+  "budget_alert",
+]);
+
+const spawnedAgentIdentity: McpConformanceScenario = {
+  name: "spawned-agent-identity",
+  description:
+    "§9.10: a spawned agent acts as itself: its principal carries spawnedBy and no onBehalfOf, and its inbox is its own",
+  specRef: "§9.10, §3.1, §5.1",
+  requires: "spawnedAgent",
+  async run(target) {
+    const { client: a, spawnedBy } = await target.spawnedAgent!();
+    const inbox = await callOk(a, "meridian_inbox", {});
+    const agent = inbox.principal?.agent;
+    check(
+      isRecord(agent) && agent.kind === "agent" && agent.id === a.agentId,
+      `inbox: principal.agent must be { kind: "agent", id: ${a.agentId} }, got ${show(agent)}`,
+    );
+    check(
+      agent.onBehalfOf === undefined,
+      `inbox: a spawned agent acts for no one, but principal.agent.onBehalfOf is ${show(agent.onBehalfOf)}`,
+    );
+    check(
+      agent.spawnedBy?.kind === "human" && agent.spawnedBy.id === spawnedBy,
+      `inbox: principal.agent.spawnedBy must be { kind: "human", id: ${spawnedBy} }, got ${show(agent.spawnedBy)}`,
+    );
+    const human = inbox.entries.filter((e) => HUMAN_INBOX_KINDS.has(e.kind));
+    check(
+      human.length === 0,
+      `inbox: an agent's own inbox lists no human entries, got ${show(human.map((e) => e.kind))}`,
+    );
+    if (!target.gatedTransition) {
+      return "work_item_transition_requested not checked: the target has no gatedTransition";
+    }
+    const { workItemId, to } = await target.gatedTransition(a);
+    const out = await callOk(a, "meridian_transition_work_item", {
+      workItemId,
+      to,
+      note: "conformance: spawned agent's gated transition",
+    });
+    check(
+      out.outcome === "pending",
+      `transition_work_item: expected outcome "pending", got ${show(out.outcome)}`,
+    );
+    const after = await callOk(a, "meridian_inbox", {
+      kinds: ["work_item_transition_requested"],
+    });
+    const mine = after.entries.find(
+      (e) =>
+        e.kind === "work_item_transition_requested" &&
+        e.workItem.id === workItemId,
+    );
+    check(
+      mine !== undefined,
+      `inbox: expected a work_item_transition_requested entry for ${workItemId}, got ${show(after.entries.map((e) => e.kind))}`,
+    );
+    check(
+      mine.kind === "work_item_transition_requested" &&
+        mine.handoff.tier === "human_gate",
+      `inbox: the entry's handoff.tier must be "human_gate", got ${show(mine)}`,
+    );
+  },
+};
+
 const taxonomyProposalHandoff: McpConformanceScenario = {
   name: "taxonomy-proposal-handoff",
   description:
@@ -777,6 +844,7 @@ export const mcpScenarios: ReadonlyArray<McpConformanceScenario> = [
   claimAfterLeaseExpiry,
   heartbeatExtendsLease,
   gatedTransitionPending,
+  spawnedAgentIdentity,
   taxonomyProposalHandoff,
   foreignAgentIdRejected,
   boardWellTyped,

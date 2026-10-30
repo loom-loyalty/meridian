@@ -1,6 +1,6 @@
 # Meridian MCP Binding Specification
 
-**Version:** 1.0.0-draft.2
+**Version:** 1.0.0-draft.3
 **Status:** Draft (experimental)
 **Date:** October 2026
 **License:** CC BY 4.0
@@ -43,20 +43,28 @@ The [runtime spec](../core/RUNTIME-SPEC.md) assumes agents it spawns. An **exter
 
 An external agent is described by an `ExternalAgent`:
 
-| Field         | Type                 | Meaning                                                                                                 |
-| ------------- | -------------------- | ------------------------------------------------------------------------------------------------------- |
-| `agentId`     | `AgentId`            | Minted by the runtime when it issues the token, e.g. `claude-session:01J…`. Never chosen by the client. |
-| `host`        | `ExternalAgentHost`  | `kind` (free-form, e.g. `cli`, `cloud_session`, `chat`), optional `label`, optional `sessionUrl`        |
-| `onBehalfOf`  | `string`             | The human the agent acts for, when it acts for one                                                      |
-| `memberships` | `DomainMembership[]` | Declared participation per [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §4: `participant` or `observer`           |
-| `permissions` | `PermissionScope`    | Service patterns and domains this token may touch (§4)                                                  |
-| `tier`        | `McpPermissionTier`  | `read` or `propose` (§4)                                                                                |
-| `issuedAt`    | `Timestamp`          | Token issue time                                                                                        |
-| `expiresAt`   | `Timestamp`          | Optional token expiry                                                                                   |
+| Field         | Type                 | Meaning                                                                                                  |
+| ------------- | -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `agentId`     | `AgentId`            | Minted by the runtime when it issues the token, e.g. `claude-session:01J…`. Never chosen by the client.  |
+| `host`        | `ExternalAgentHost`  | `kind` (free-form, e.g. `cli`, `cloud_session`, `chat`), optional `label`, optional `sessionUrl`         |
+| `onBehalfOf`  | `string`             | The human the agent acts for, when it acts for one                                                       |
+| `spawnedBy`   | `SpawnAttribution`   | Who started the agent, when someone did: a person, another agent, or a system component. Provenance only |
+| `memberships` | `DomainMembership[]` | Declared participation per [`DOMAIN-SPEC.md`](DOMAIN-SPEC.md) §4: `participant` or `observer`            |
+| `permissions` | `PermissionScope`    | Service patterns and domains this token may touch (§4)                                                   |
+| `tier`        | `McpPermissionTier`  | `read` or `propose` (§4)                                                                                 |
+| `issuedAt`    | `Timestamp`          | Token issue time                                                                                         |
+| `expiresAt`   | `Timestamp`          | Optional token expiry                                                                                    |
 
-The runtime records every write made through the binding with the `Attribution` `{ kind: "agent", id: agentId, onBehalfOf }`. Clients MUST NOT be able to set or override attribution: no tool input carries an `author`, `createdBy`, `declaredBy`, or `reviewer` field, and servers MUST ignore such fields if sent. An `Attribution.model` reported by the client is informational and MUST NOT affect authorization.
+The runtime records every write made through the binding with the `Attribution` `{ kind: "agent", id: agentId, onBehalfOf, spawnedBy }`. Clients MUST NOT be able to set or override attribution: no tool input carries an `author`, `createdBy`, `declaredBy`, or `reviewer` field, and servers MUST ignore such fields if sent. An `Attribution.model` reported by the client is informational and MUST NOT affect authorization.
 
 An external agent is an agent for every purpose in the other specs. In particular it **can never record a `human_gate` review**, including when it acts on behalf of a steward ([`KNOWLEDGE-SPEC.md`](KNOWLEDGE-SPEC.md) §11). A proposal authored by an agent acting for a steward cannot be approved at the human gate by that steward; another steward of the domain must approve it.
+
+**Spawned agents act as themselves.** A person's session, a coordinator, or a scheduler may start an agent, for example a coding session for one work item. The runtime records who did in `spawnedBy` when it issues the agent's token; the client never chooses it. `spawnedBy` is provenance, not authority:
+
+- The agent does not act for its spawner. Without `onBehalfOf`, its writes are its own, its effective access comes from its own memberships (§4.3), and its inbox is its own (§5.1).
+- The spawner is not one of the people its work is excluded from: a human who spawned an agent MAY approve that agent's proposals and gated transitions at the human gate, if they are otherwise eligible (KNOWLEDGE-SPEC.md §11). Runtimes MAY require a different approver, and SHOULD show `spawnedBy` to the person deciding.
+- A runtime SHOULD NOT give a spawned agent memberships in domains its spawner could not act in when it was spawned.
+- An agent that acts for a person is still recorded with `onBehalfOf`, and the rules above for `onBehalfOf` apply unchanged. A runtime MAY record both.
 
 ### 3.2 Authentication
 
@@ -101,7 +109,7 @@ All tools are named `meridian_<verb>_<noun>` in `snake_case`. The prefix `meridi
 
 | Tool                               | Tier      | Purpose                                                              |
 | ---------------------------------- | --------- | -------------------------------------------------------------------- |
-| `meridian_inbox`                   | `read`    | What needs the calling human: gates, blocked work, budget alerts     |
+| `meridian_inbox`                   | `read`    | What needs the caller: gates, blocked work, budget alerts            |
 | `meridian_list_work_items`         | `read`    | The board: filtered, sorted, paginated work items with priority      |
 | `meridian_get_work_item`           | `read`    | One work item with its context bundle                                |
 | `meridian_search`                  | `read`    | Text search across work items, nodes, specs, sections, and proposals |
@@ -127,17 +135,18 @@ Propose tools that create something accept an optional `idempotencyKey`. A serve
 
 ### 5.1 Read tools
 
-**`meridian_inbox`** — entries that need the calling human. Requires an agent that acts on behalf of a human; otherwise `permission_denied`.
+**`meridian_inbox`** — entries that need the caller. For an agent that acts on behalf of a human, these are the human's entries: the first five kinds below. For an agent that acts for no one, they are the agent's own: `work_item_transition_requested`, and `blocked_work_item` and `proposal_conflicted` for its own claims and proposals. An agent's inbox never lists entries for its spawner.
 
-| Entry kind                      | When it appears                                                                                                                                                                   |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `proposal_awaiting_human_gate`  | A proposal is `in_review` at `human_gate` and the human is an eligible approver (a steward of a touched domain, in `approvers` if set, and not excluded by KNOWLEDGE-SPEC.md §11) |
-| `work_item_awaiting_human_gate` | A work item's transition is pending at a `human_gate` the human may approve                                                                                                       |
-| `blocked_work_item`             | A work item the human stewards (listed in the item's node `stewards`, or a steward of its domain when none is listed) is blocked                                                  |
-| `proposal_conflicted`           | A proposal authored by the human, or by an agent on their behalf, is `conflicted` and needs a rebase                                                                              |
-| `budget_alert`                  | A domain the human stewards has `currentSpendUsd / monthlyLimitUsd ≥ alertThreshold`                                                                                              |
+| Entry kind                       | When it appears                                                                                                                                                                   |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `proposal_awaiting_human_gate`   | A proposal is `in_review` at `human_gate` and the human is an eligible approver (a steward of a touched domain, in `approvers` if set, and not excluded by KNOWLEDGE-SPEC.md §11) |
+| `work_item_awaiting_human_gate`  | A work item's transition is pending at a `human_gate` the human may approve                                                                                                       |
+| `blocked_work_item`              | A work item the human stewards (listed in the item's node `stewards`, or a steward of its domain when none is listed) is blocked                                                  |
+| `proposal_conflicted`            | A proposal authored by the human, or by an agent on their behalf, is `conflicted` and needs a rebase                                                                              |
+| `budget_alert`                   | A domain the human stewards has `currentSpendUsd / monthlyLimitUsd ≥ alertThreshold`                                                                                              |
+| `work_item_transition_requested` | Agent inbox only: a transition the agent requested waits at a human gate. `handoff.subject.to` is the requested status                                                            |
 
-Input: optional `kinds`, `domain`, `cursor`, `limit`. Output: `McpInboxOutput` with the resolved `principal` (`McpPrincipal`: the caller's agent, human, tier, and domain roles), `entries`, and `nextCursor`. Order is implementation-defined; entries that wait on the human's gate SHOULD come first.
+Input: optional `kinds`, `domain`, `cursor`, `limit`. Output: `McpInboxOutput` with the resolved `principal` (`McpPrincipal`: the caller's agent attribution, including `onBehalfOf` and `spawnedBy`, its tier, and its domain roles), `entries`, and `nextCursor`. Order is implementation-defined; entries that wait on the human's gate SHOULD come first.
 
 **`meridian_list_work_items`** — the board. A board view, not a pull query: unlike `PRIORITY_QUERY`, it includes `proposed` and escalated items so people can see them.
 
@@ -243,7 +252,7 @@ Most evidence an external coding agent produces lives in other systems: pull req
 | Automated code review        | `agent_review` | The reviewer agent, attributed to itself                                               |
 | A human's approval of the PR | `human_gate`   | The runtime's integration, after mapping the approver to a steward eligible to approve |
 
-None of these is recorded through this binding. The agent that wrote the change cannot report that its CI passed or that its PR was approved; the runtime learns it from the source system. A human approval counts at the gate only when the approver is an eligible approver under the item's `GateConfig`, and implementations SHOULD NOT count an approval by the human the authoring agent acted for, in line with KNOWLEDGE-SPEC.md §11.
+None of these is recorded through this binding. The agent that wrote the change cannot report that its CI passed or that its PR was approved; the runtime learns it from the source system. A human approval counts at the gate only when the approver is an eligible approver under the item's `GateConfig`, and implementations SHOULD NOT count an approval by the human the authoring agent acted for, in line with KNOWLEDGE-SPEC.md §11. An approval by the human who spawned the agent counts unless the runtime requires otherwise (§3.1).
 
 ---
 
@@ -309,11 +318,13 @@ Minimum scenarios for a conformance suite:
 7. An emitted signal with a foreign `agentId`: `permission_denied`.
 8. `meridian_list_work_items` returns well-typed entries, with `priorityScore: null` and `pendingReviewReasons` populated for an escalated item.
 9. No tool call, with any input, produces a `human_gate` review.
+10. An agent spawned by a human, acting for no one: `meridian_inbox` succeeds, its `principal.agent` carries `spawnedBy` and no `onBehalfOf`, and it lists none of the human-only entry kinds. A gated transition it requests appears in its inbox as `work_item_transition_requested`.
 
 Fixtures and hooks:
 
 - Scenarios that create work items use the domain's root work item type: rung 0 of the domain's resolved ladder, as `meridian_get_taxonomy` with `domain` returns it (`resolved.ladder[0]`). A suite's target configuration MAY name it directly (the conformance package's `rootWorkItemTypeId`), but it MUST be that rung.
 - Scenarios that move work items rely only on transitions that are ungated under §5.2, such as `proposed → researching → cancelled`; scenario 5 needs the runtime to arrange an item with a gated transition.
+- Scenario 10 needs the runtime to mint a spawned agent; its last check also needs the gated-transition fixture of scenario 5.
 - Scenario 9 needs a runtime-side hook, such as a count of `human_gate` reviews recorded during the run: reviews are not observable through the binding alone.
 
 Ordering, ranking, search quality, and impact inference are not conformance-gated, consistent with PRIORITY-ENGINE-SPEC.md §7 and KNOWLEDGE-SPEC.md §7.3.
